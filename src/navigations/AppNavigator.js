@@ -39,6 +39,7 @@ import CalendarScreen from '../screens/CalendarScreen';
 import DailyCleaningScreen from '../screens/DailyCleaningScreen';
 import InventoryDetailScreen from '../screens/InventoryDetailScreen';
 import RoomLogScreen from '../screens/RoomLogScreen';
+import {PropertyProvider} from '../components/PropertyContext';
 
 
 const Stack = createNativeStackNavigator();
@@ -505,6 +506,8 @@ const AppNavigator = () => {
         translucent={false}
       />
 
+      <PropertyProvider>
+
       <NavigationContainer>
 
         <Stack.Navigator
@@ -616,6 +619,8 @@ const AppNavigator = () => {
         </Stack.Navigator>
 
       </NavigationContainer>
+
+      </PropertyProvider>
     </>
   );
 };
