@@ -19,6 +19,8 @@ import {
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import PropertyDropdown from '../components/PropertyDropdown';
+
 
 const {width, height} = Dimensions.get('window');
 
@@ -70,7 +72,6 @@ const CalendarScreen = ({navigation}) => {
 
   const [units, setUnits] = useState([]);
   const [selectedUnit, setSelectedUnit] = useState(null);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
 
 
   const [bookings, setBookings] = useState([]);
@@ -1216,8 +1217,6 @@ const CalendarScreen = ({navigation}) => {
 
   const handleUnitChange =
     unit => {
-      setDropdownOpen(false);
-
       if (
         selectedUnit?.unit_id ===
         unit?.unit_id
@@ -1296,207 +1295,16 @@ const CalendarScreen = ({navigation}) => {
               styles.topActionRow
             }>
 
-            {/* =================================================
-                DROPDOWN
-            ================================================= */}
-
-            <View
-              style={
-                styles.dropdownWrapper
-              }>
-
-              <TouchableOpacity
-                activeOpacity={0.8}
-                style={
-                  styles.dropdownButton
-                }
-                onPress={() =>
-                  setDropdownOpen(
-                    previous =>
-                      !previous,
-                  )
-                }>
-
-                <View
-                  style={
-                    styles.dropdownTextContainer
-                  }>
-
-                  <Text
-                    style={
-                      styles.dropdownSmallLabel
-                    }>
-                    PROPERTY
-                  </Text>
-
-                  <Text
-                    numberOfLines={1}
-                    style={
-                      styles.dropdownText
-                    }>
-                    {selectedUnit
-                      ? getUnitName(
-                          selectedUnit,
-                        )
-                      : 'Select Unit'}
-                  </Text>
-                </View>
-
-                <View
-                  style={
-                    styles.dropdownArrowBox
-                  }>
-
-                  <Text
-                    style={
-                      styles.dropdownArrow
-                    }>
-                    {dropdownOpen
-                      ? '⌃'
-                      : '⌄'}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* =================================================
-                  DROPDOWN MENU
-              ================================================= */}
-
-              {dropdownOpen && (
-                <View
-                  style={
-                    styles.dropdownMenu
-                  }>
-
-                  <Text
-                    style={
-                      styles.menuTitle
-                    }>
-                    Select Property
-                  </Text>
-
-                  {units.length ===
-                  0 ? (
-                    <View
-                      style={
-                        styles.emptyItem
-                      }>
-
-                      <Text
-                        style={
-                          styles.emptyText
-                        }>
-                        No units available
-                      </Text>
-                    </View>
-                  ) : (
-                    <ScrollView
-                      nestedScrollEnabled
-                      style={
-                        styles.dropdownScroll
-                      }
-                      showsVerticalScrollIndicator={
-                        false
-                      }>
-
-                      {units.map(
-                        unit => {
-                          const unitName =
-                            getUnitName(
-                              unit,
-                            );
-
-                          const active =
-                            String(
-                              selectedUnit?.unit_id,
-                            ) ===
-                            String(
-                              unit?.unit_id,
-                            );
-
-                          return (
-                            <TouchableOpacity
-                              key={String(
-                                unit?.unit_id,
-                              )}
-                              activeOpacity={
-                                0.7
-                              }
-                              style={[
-                                styles.dropdownItem,
-
-                                active &&
-                                  styles.activeItem,
-                              ]}
-                              onPress={() =>
-                                handleUnitChange(
-                                  unit,
-                                )
-                              }>
-
-                              <View
-                                style={
-                                  styles.itemContent
-                                }>
-
-                                <View
-                                  style={[
-                                    styles.itemDot,
-
-                                    active &&
-                                      styles.activeItemDot,
-                                  ]}
-                                />
-
-                                <View
-                                  style={
-                                    styles.itemTextContainer
-                                  }>
-
-                                  <Text
-                                    numberOfLines={
-                                      2
-                                    }
-                                    style={[
-                                      styles.dropdownItemText,
-
-                                      active &&
-                                        styles.activeItemText,
-                                    ]}>
-                                    {
-                                      unitName
-                                    }
-                                  </Text>
-
-                                  {/* <Text
-                                    style={
-                                      styles.unitIdText
-                                    }>
-                                    Unit ID:{' '}
-                                    {
-                                      unit?.unit_id
-                                    }
-                                  </Text> */}
-                                </View>
-
-                                {active && (
-                                  <Text
-                                    style={
-                                      styles.checkMark
-                                    }>
-                                    ✓
-                                  </Text>
-                                )}
-                              </View>
-                            </TouchableOpacity>
-                          );
-                        },
-                      )}
-                    </ScrollView>
-                  )}
-                </View>
-              )}
-            </View>
+            <PropertyDropdown
+              selectedValue={selectedUnit?.unit_id}
+              selectedLabel={
+                selectedUnit
+                  ? getUnitName(selectedUnit)
+                  : undefined
+              }
+              fallbackProperties={units}
+              onChange={(name, unit) => handleUnitChange(unit)}
+            />
 
           </View>
 
