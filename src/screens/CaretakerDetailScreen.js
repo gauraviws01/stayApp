@@ -8,8 +8,10 @@ import {
   StatusBar,
   SafeAreaView,
 } from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
 const CaretakerDetailScreen = ({navigation}) => {
+  const insets = useSafeAreaInsets();
   const [selectedProperty, setSelectedProperty] = useState(
     'Sereno Greens - Cosy 1 BHK with Pvt Balcony',
   );
@@ -26,7 +28,7 @@ const CaretakerDetailScreen = ({navigation}) => {
       name: 'Ravi Kumar',
       role: 'Housekeeping Lead',
       phone: '+91 98765 43210',
-      shift: 'Morning shift',
+      shift: 'Morning shift'
     },
     {
       name: 'Asha Verma',
@@ -38,10 +40,10 @@ const CaretakerDetailScreen = ({navigation}) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F3F7F4" />
+      <StatusBar barStyle="dark-content" backgroundColor="#F3F7F4" translucent={false} />
 
       <View style={styles.container}>
-        <View style={styles.header}>
+        <View style={[styles.header, {paddingTop: Math.max(insets.top, 16) + 8}]}>
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={() => navigation?.goBack?.()}
@@ -94,7 +96,9 @@ const CaretakerDetailScreen = ({navigation}) => {
           )}
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.content, {paddingBottom: insets.bottom + 32}]}>
           <View style={styles.heroCard}>
             <View style={styles.iconWrap}>
               <Text style={styles.icon}>👥</Text>
@@ -106,14 +110,12 @@ const CaretakerDetailScreen = ({navigation}) => {
 
           {caretakerList.map(item => (
             <View key={item.name} style={styles.personCard}>
-              <View style={styles.avatarWrap}>
-                <Text style={styles.avatarText}>{item.name.slice(0, 2).toUpperCase()}</Text>
-              </View>
 
               <View style={styles.personInfo}>
                 <Text style={styles.personName}>{item.name}</Text>
                 <Text style={styles.personRole}>{item.role}</Text>
               </View>
+
 
               <View style={styles.metaBlock}>
                 <Text style={styles.metaLabel}>Phone</Text>
@@ -260,8 +262,9 @@ const styles = StyleSheet.create({
     color: '#1F2D2A',
   },
   heroSubtitle: {
-    fontSize: 12,
-    color: '#6E8B84',
+    fontSize: 14,
+    color: '#5F7D72',
+    fontWeight: '600',
     marginTop: 4,
   },
   personCard: {
@@ -271,17 +274,20 @@ const styles = StyleSheet.create({
     borderColor: '#DDEAE4',
     padding: 16,
     marginBottom: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
+    shadowColor: '#000000',
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    shadowOffset: {width: 0, height: 2},
+    elevation: 1,
   },
   avatarWrap: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: '#1DBA78',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginBottom: 14,
   },
   avatarText: {
     color: '#FFFFFF',
@@ -289,7 +295,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   personInfo: {
-    flex: 1,
+    marginBottom: 12,
   },
   personName: {
     fontSize: 17,
@@ -300,16 +306,45 @@ const styles = StyleSheet.create({
     color: '#6E8B84',
     fontSize: 12,
     marginTop: 4,
+    fontWeight: '600',
+  },
+  statusWrap: {
+    marginBottom: 12,
+  },
+  statusBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+    marginRight: 6,
+  },
+  statusText: {
+    fontSize: 12,
+    color: '#047857',
+    fontWeight: '700',
   },
   metaBlock: {
-    marginLeft: 10,
+    // marginTop: 4,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    alignItems: 'center',
   },
   metaLabel: {
     fontSize: 10,
     fontWeight: '700',
     color: '#6E8B84',
     textTransform: 'uppercase',
-    marginTop: 6,
+    // marginTop: 6,
   },
   metaValue: {
     fontSize: 12,

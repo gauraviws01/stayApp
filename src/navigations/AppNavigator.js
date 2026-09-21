@@ -36,6 +36,7 @@ import UpdateWorkProgress from '../screens/UpdateWorkProgress';
 import WorkProgressDetail from '../screens/WorkProgressDetail';
 import DashboardDetail from '../screens/DashboardDetail';
 import CalendarScreen from '../screens/CalendarScreen';
+import InventoryDetailScreen from '../screens/InventoryDetailScreen';
 
 
 const Stack = createNativeStackNavigator();
@@ -188,6 +189,7 @@ const DrawerContent = ({
       bg: '#EAF9F0',
       title: 'Inventory',
       subtitle: 'Supplies & stock levels',
+      route: 'InventoryDetail',
     },
   ];
 
@@ -522,6 +524,12 @@ const AppNavigator = () => {
         <Stack.Screen
           name="CaretakerDetail"
           component={require('../screens/CaretakerDetailScreen').default}
+          options={{headerShown: false}}
+        />
+
+        <Stack.Screen
+          name="InventoryDetail"
+          component={InventoryDetailScreen}
           options={{headerShown: false}}
         />
 
