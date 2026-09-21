@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {useCallback, useRef, useState} from 'react';
 
 import {
   View,
@@ -36,7 +36,9 @@ import UpdateWorkProgress from '../screens/UpdateWorkProgress';
 import WorkProgressDetail from '../screens/WorkProgressDetail';
 import DashboardDetail from '../screens/DashboardDetail';
 import CalendarScreen from '../screens/CalendarScreen';
+import DailyCleaningScreen from '../screens/DailyCleaningScreen';
 import InventoryDetailScreen from '../screens/InventoryDetailScreen';
+import RoomLogScreen from '../screens/RoomLogScreen';
 
 
 const Stack = createNativeStackNavigator();
@@ -100,6 +102,35 @@ const DashboardHomeScreen = () => {
         navigation={navigation}
       />
 
+    </View>
+  );
+};
+
+const DailyCleaningHomeScreen = () => {
+  const insets = useSafeAreaInsets();
+  const {openDrawer} = React.useContext(DrawerContext);
+  const navigation = useNavigation();
+
+  return (
+    <View style={styles.dashboardHomeContainer}>
+      <View
+        style={[
+          styles.dashboardHeaderBar,
+          {paddingTop: Math.max(insets.top, 12) + 8},
+        ]}>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          style={styles.dashboardDrawerButton}
+          onPress={openDrawer}>
+          <Text style={styles.dashboardDrawerIcon}>☰</Text>
+        </TouchableOpacity>
+        <Text style={styles.dashboardHeaderTitle}>Daily Cleaning</Text>
+      </View>
+
+      <DailyCleaningScreen
+        navigation={navigation}
+        openDrawer={openDrawer}
+      />
     </View>
   );
 };
@@ -176,6 +207,8 @@ const DrawerContent = ({
       bg: '#FFF3E7',
       title: 'Daily Cleaning',
       subtitle: "Today's housekeeping plan",
+      route: 'MainApp',
+      targetScreen: 'DailyCleaningScreen',
     },
     {
       icon: '◫',
@@ -350,7 +383,12 @@ const DrawerContent = ({
 
 const MainApp = ({route}) => {
 
-  const selectedScreen = route?.params?.screen === 'CalendarScreen' ? 'calendar' : 'dashboard';
+  const selectedScreen =
+    route?.params?.screen === 'CalendarScreen'
+      ? 'calendar'
+      : route?.params?.screen === 'DailyCleaningScreen'
+        ? 'cleaning'
+        : 'dashboard';
 
   const [drawerVisible, setDrawerVisible] = useState(false);
 
@@ -396,6 +434,8 @@ const MainApp = ({route}) => {
 
         {selectedScreen === 'calendar' ? (
           <CalendarHomeScreen />
+        ) : selectedScreen === 'cleaning' ? (
+          <DailyCleaningHomeScreen />
         ) : (
           <DashboardHomeScreen />
         )}
@@ -537,6 +577,18 @@ const AppNavigator = () => {
         <Stack.Screen
           name="InventoryDetail"
           component={InventoryDetailScreen}
+          options={{headerShown: false}}
+        />
+
+        <Stack.Screen
+          name="AddRoom"
+          component={RoomLogScreen}
+          options={{headerShown: false}}
+        />
+
+        <Stack.Screen
+          name="EditRoom"
+          component={RoomLogScreen}
           options={{headerShown: false}}
         />
 
