@@ -9,6 +9,8 @@ import {
   Dimensions,
 } from 'react-native';
 
+import PropertyDropdown from '../components/PropertyDropdown';
+
 
 // ======================================================
 // RESPONSIVE
@@ -28,6 +30,63 @@ const PRIMARY = '#17B978';
 const DARK = '#222222';
 const BACKGROUND = '#F4F8F5';
 
+const propertyOptions = [
+  'All properties',
+  'Sereno Horizon 3bhk Penthouse pvt jacuzzi rooftop',
+  'Sereno Foresta cosy 1 bhk greenery view w/pool+game',
+  'Sereno Blossom - luxury 1bhk w/pool near Baga',
+];
+
+const bookingProperties = propertyOptions.slice(1);
+const fallbackPropertyOptions = propertyOptions.slice(1);
+
+const dateSets = {
+  Today: {
+    checkin: ['21 September 2026', '21 September 2026'],
+    checkout: ['23 September 2026', '24 September 2026'],
+  },
+  Tomorrow: {
+    checkin: ['22 September 2026', '22 September 2026'],
+    checkout: ['25 September 2026', '26 September 2026'],
+  },
+  'Next 7 days': {
+    checkin: ['24 September 2026', '26 September 2026'],
+    checkout: ['27 September 2026', '30 September 2026'],
+  },
+};
+
+const createBookings = (dateFilter, count = 20) =>
+  Array.from({length: count}, (_, index) => {
+    const propertyIndex = index % bookingProperties.length;
+    const isPending = index % 4 === 1;
+    const dates = dateSets[dateFilter];
+
+    return {
+      bookingId: `${dateFilter}-${index + 1}`,
+      location: ['ASSAGAO, GOA', 'ANJUNA, GOA', 'SIOLIM, GOA'][index % 3],
+      property: bookingProperties[propertyIndex],
+      guest: ['Kushal Garg', 'Maya Shah', 'Arjun Mehta', 'Rhea Kapoor'][index % 4],
+      guests: `${4 + (index % 6)} adults`,
+      adults: 4 + (index % 6),
+      children: index % 3,
+      phone: '+91 7259442216',
+      email: 'Unknown',
+      status: isPending ? 'PENDING' : 'CONFIRMED',
+      statusType: isPending ? 'pending' : 'confirmed',
+      dateFilter,
+      checkin_date: dates.checkin[index % dates.checkin.length],
+      checkout_date: dates.checkout[index % dates.checkout.length],
+      channel: index % 2 === 0 ? 'Central Reservation System' : 'Airbnb Content',
+      type: index % 2 === 0 ? 'arrival' : 'departure',
+    };
+  });
+
+const bookings = [
+  ...createBookings('Today', 60),
+  ...createBookings('Tomorrow', 60),
+  ...createBookings('Next 7 days', 60),
+];
+
 
 // ======================================================
 // DASHBOARD
@@ -39,119 +98,9 @@ const DashboardScreen = ({navigation, route}) => {
 
   const [dateFilter, setDateFilter] = useState('Today');
 
+  const [selectedProperty, setSelectedProperty] = useState('All properties');
 
-  // ====================================================
-  // ARRIVALS
-  // ====================================================
-
-  const arrivals = [
-    {
-      bookingId: '1789676161096',
-
-      location: 'ASSAGAO, GOA',
-
-      property:
-        'Sereno Ikigai 4bhk villa with private pool & breakfast cook',
-
-      guest: 'Kushal Garg',
-
-      guests: '9 adults',
-
-      adults: 9,
-
-      children: 0,
-
-      phone: '+91 7259442216',
-
-      email: 'Unknown',
-
-      status: 'CONFIRMED',
-
-      statusType: 'confirmed',
-
-      date: '17 Sep — 20 Sep 2026',
-
-      checkin_date: '17 September 2026',
-
-      checkout_date: '20 September 2026',
-
-      channel: 'Airbnb Content',
-    },
-
-
-    {
-      bookingId: '1789676161097',
-
-      location: 'ANJUNA, GOA',
-
-      property:
-        'The Fig House · 3 bedroom garden stay',
-
-      guest: 'Maya Shah',
-
-      guests: '6 adults',
-
-      adults: 6,
-
-      children: 0,
-
-      phone: '+91 7259442216',
-
-      email: 'Unknown',
-
-      status: 'PENDING',
-
-      statusType: 'pending',
-
-      date: '04 Oct — 07 Oct 2026',
-
-      checkin_date: '04 October 2026',
-
-      checkout_date: '07 October 2026',
-
-      channel: 'Airbnb Content',
-    },
-  ];
-
-
-  // ====================================================
-  // DEPARTURES
-  // ====================================================
-
-  const departures = [
-    {
-      bookingId: '1789676161098',
-
-      location: 'SIOLIM, GOA',
-
-      property:
-        'Palm & Stone · private pool retreat',
-
-      guest: 'Arjun Mehta',
-
-      guests: '4 adults',
-
-      adults: 4,
-
-      children: 0,
-
-      phone: '+91 7259442216',
-
-      email: 'Unknown',
-
-      status: 'CONFIRMED',
-
-      statusType: 'confirmed',
-
-      date: '20 Sep 2026',
-
-      checkin_date: '19 September 2026',
-
-      checkout_date: '20 September 2026',
-
-      channel: 'Airbnb Content',
-    },
-  ];
+  const [visibleCount, setVisibleCount] = useState(20);
 
 
   // ====================================================
@@ -231,103 +180,99 @@ const DashboardScreen = ({navigation, route}) => {
         onPress={() => openBookingDetail(item)}>
 
 
-        {/* ========================================= */}
-        {/* PROPERTY ICON */}
-        {/* ========================================= */}
-
-        <View
-          style={[
-            styles.propertyIcon,
-
-            item.statusType === 'pending' &&
-              styles.propertyIconPending,
-          ]}>
-
-          <Text
-            style={[
-              styles.homeIcon,
-
-              item.statusType === 'pending' &&
-                styles.homeIconPending,
-            ]}>
-            ⌂
-          </Text>
-
-        </View>
-
-
-        {/* ========================================= */}
-        {/* CONTENT */}
-        {/* ========================================= */}
-
-        <View style={styles.bookingContent}>
-
-          <Text style={styles.location}>
-            {item.location}
-          </Text>
-
-
-          <Text
-            style={styles.propertyName}
-            numberOfLines={3}>
-
-            {item.property}
-
-          </Text>
-
-
-          <View style={styles.guestRow}>
-
-            <Text style={styles.peopleIcon}>
-              ♧
-            </Text>
-
-            <Text style={styles.guestText}>
-              {item.guest} · {item.guests}
-            </Text>
-
-          </View>
-
-        </View>
-
-
-        {/* ========================================= */}
-        {/* RIGHT SIDE */}
-        {/* ========================================= */}
-
-        <View style={styles.bookingRight}>
-
+        <View style={styles.bookingTopRow}>
           <View
             style={[
-              styles.statusPill,
-
-              item.statusType === 'pending' &&
-                styles.pendingPill,
+              styles.propertyIcon,
+              item.statusType === 'pending' && styles.propertyIconPending,
             ]}>
-
             <Text
               style={[
-                styles.statusText,
-
-                item.statusType === 'pending' &&
-                  styles.pendingText,
+                styles.homeIcon,
+                item.statusType === 'pending' && styles.homeIconPending,
               ]}>
-
-              {item.status}
-
+              ⌂
             </Text>
-
           </View>
 
+          <View style={styles.bookingContent}>
+            <View style={styles.bookingSourceRow}>
+              <View
+                style={[
+                  styles.statusPill,
+                  item.statusType === 'pending' && styles.pendingPill,
+                ]}>
+                <Text
+                  style={[
+                    styles.statusText,
+                    item.statusType === 'pending' && styles.pendingText,
+                  ]}
+                  numberOfLines={1}>
+                  {item.channel}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.location}>{item.location}</Text>
+            <Text style={styles.propertyName} numberOfLines={3}>
+              {item.property}
+            </Text>
 
-          <Text style={styles.dateText}>
-            {item.date}
-          </Text>
+            <View style={styles.guestRow}>
+              <Text style={styles.peopleIcon}>♧</Text>
+              <Text style={styles.guestText}>
+                {item.guest} · {item.guests}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.bookingFooter}>
+          <View style={styles.dateSummary}>
+            <View style={styles.dateGroup}>
+              <Text style={styles.dateLabel}>CHECK-IN</Text>
+              <Text style={styles.dateValue}>{item.checkin_date}</Text>
+            </View>
+            <View style={styles.dateGroupLast}>
+              <Text style={styles.dateLabel}>CHECK-OUT</Text>
+              <Text style={styles.dateValue}>{item.checkout_date}</Text>
+            </View>
+          </View>
 
         </View>
 
       </TouchableOpacity>
     );
+  };
+
+  const filteredBookings = bookings.filter(
+    item =>
+      item.dateFilter === dateFilter &&
+      (selectedProperty === 'All properties' ||
+        item.property === selectedProperty),
+  );
+
+  const visibleBookings = filteredBookings.slice(0, visibleCount);
+
+  const loadMoreBookings = event => {
+    const {layoutMeasurement, contentOffset, contentSize} = event.nativeEvent;
+    const isNearBottom =
+      layoutMeasurement.height + contentOffset.y >= contentSize.height - 160;
+
+    if (isNearBottom && visibleCount < filteredBookings.length) {
+      setVisibleCount(currentCount =>
+        Math.min(currentCount + 10, filteredBookings.length),
+      );
+    }
+  };
+
+  const selectDateFilter = filter => {
+    setDateFilter(filter);
+    setVisibleCount(20);
+  };
+
+  const selectProperty = property => {
+    setSelectedProperty(property);
+    setVisibleCount(20);
   };
 
 
@@ -340,7 +285,18 @@ const DashboardScreen = ({navigation, route}) => {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}>
+        contentContainerStyle={styles.scrollContent}
+        onScroll={loadMoreBookings}
+        scrollEventThrottle={200}>
+
+        <View style={styles.propertySelectorSection}>
+          <PropertyDropdown
+            selectedValue={selectedProperty}
+            onChange={selectProperty}
+            fallbackProperties={fallbackPropertyOptions}
+            includeAll
+          />
+        </View>
 
 
         {/* ========================================= */}
@@ -428,9 +384,7 @@ const DashboardScreen = ({navigation, route}) => {
 
           <TouchableOpacity
             activeOpacity={0.8}
-            onPress={() =>
-              setDateFilter('Today')
-            }
+            onPress={() => selectDateFilter('Today')}
             style={[
               styles.dateFilter,
 
@@ -457,9 +411,7 @@ const DashboardScreen = ({navigation, route}) => {
 
           <TouchableOpacity
             activeOpacity={0.8}
-            onPress={() =>
-              setDateFilter('Tomorrow')
-            }
+            onPress={() => selectDateFilter('Tomorrow')}
             style={[
               styles.dateFilter,
 
@@ -486,9 +438,7 @@ const DashboardScreen = ({navigation, route}) => {
 
           <TouchableOpacity
             activeOpacity={0.8}
-            onPress={() =>
-              setDateFilter('Next 7 days')
-            }
+            onPress={() => selectDateFilter('Next 7 days')}
             style={[
               styles.dateFilter,
 
@@ -522,30 +472,7 @@ const DashboardScreen = ({navigation, route}) => {
           <>
 
 
-            {/* ARRIVALS */}
-
-            <Text style={styles.subTitle}>
-              ARRIVALS
-            </Text>
-
-
-            {arrivals.map(renderBooking)}
-
-
-            {/* DEPARTURES */}
-
-            <Text
-              style={[
-                styles.subTitle,
-                styles.departureTitle,
-              ]}>
-
-              DEPARTURES
-
-            </Text>
-
-
-            {departures.map(renderBooking)}
+            {visibleBookings.map(renderBooking)}
 
           </>
 
@@ -602,6 +529,12 @@ const styles = StyleSheet.create({
   },
 
 
+  propertySelectorSection: {
+    marginBottom: hp(2.5),
+    zIndex: 10,
+  },
+
+
   // ====================================================
   // TOP TABS
   // ====================================================
@@ -609,7 +542,7 @@ const styles = StyleSheet.create({
   topTabs: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: hp(4),
+    marginBottom: hp(2),
   },
 
 
@@ -739,7 +672,7 @@ const styles = StyleSheet.create({
 
     alignItems: 'center',
 
-    marginBottom: hp(4),
+    marginBottom: hp(2),
   },
 
 
@@ -762,7 +695,7 @@ const styles = StyleSheet.create({
 
 
   dateFilterText: {
-    fontSize: wp(3),
+    fontSize: wp(3.4),
 
     fontWeight: '600',
 
@@ -865,9 +798,7 @@ const styles = StyleSheet.create({
 
     paddingVertical: hp(2.1),
 
-    flexDirection: 'row',
-
-    alignItems: 'center',
+    flexDirection: 'column',
 
     borderWidth: 1,
 
@@ -885,6 +816,14 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
 
     elevation: 2,
+  },
+
+
+  bookingTopRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flex: 1,
   },
 
 
@@ -938,6 +877,12 @@ const styles = StyleSheet.create({
     marginLeft: wp(3),
 
     paddingRight: wp(1),
+  },
+
+
+  bookingSourceRow: {
+    alignItems: 'flex-end',
+    marginBottom: hp(0.8),
   },
 
 
@@ -996,23 +941,22 @@ const styles = StyleSheet.create({
   // RIGHT SIDE
   // ====================================================
 
-  bookingRight: {
-    width: wp(22),
-
-    alignItems: 'flex-end',
-
-    justifyContent: 'space-between',
-
-    alignSelf: 'stretch',
-
-    paddingVertical: hp(0.3),
+  bookingFooter: {
+    width: '100%',
+    alignItems: 'stretch',
+    marginTop: hp(1.8),
+    borderTopWidth: 1,
+    borderTopColor: '#EDF2EF',
+    paddingTop: hp(1.2),
   },
 
 
   statusPill: {
-    paddingHorizontal: wp(3),
+    paddingHorizontal: wp(2.8),
 
-    height: hp(3.5),
+    minHeight: hp(3.2),
+
+    maxWidth: '85%',
 
     borderRadius: hp(2),
 
@@ -1030,7 +974,7 @@ const styles = StyleSheet.create({
 
 
   statusText: {
-    fontSize: wp(2.5),
+    fontSize: wp(2.3),
 
     fontWeight: '800',
 
@@ -1055,6 +999,45 @@ const styles = StyleSheet.create({
     textAlign: 'right',
 
     marginTop: hp(1),
+  },
+
+
+  dateSummary: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginLeft: 0,
+  },
+
+
+  dateGroup: {
+    alignItems: 'flex-start',
+    flex: 1,
+  },
+
+
+  dateGroupLast: {
+    alignItems: 'flex-end',
+    flex: 1,
+  },
+
+
+  dateLabel: {
+    fontSize: wp(2.1),
+    fontWeight: '800',
+    letterSpacing: wp(0.2),
+    color: '#9AA7A1',
+    marginTop: hp(0.4),
+  },
+
+
+  dateValue: {
+    fontSize: wp(2.45),
+    fontWeight: '600',
+    color: '#586A62',
+    textAlign: 'left',
+    marginTop: hp(0.15),
   },
 
 

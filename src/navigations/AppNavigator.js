@@ -92,6 +92,8 @@ const DashboardHomeScreen = () => {
 
         </TouchableOpacity>
 
+        <Text style={styles.dashboardHeaderTitle}>Dashboard</Text>
+
       </View>
 
       <DashboardScreen
@@ -148,6 +150,7 @@ const DrawerContent = ({
   closeDrawer,
 }) => {
 
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation();
 
   const quickAccessItems = [
@@ -280,7 +283,11 @@ const DrawerContent = ({
 
 
   return (
-    <View style={styles.drawerContent}>
+    <View
+      style={[
+        styles.drawerContent,
+        {paddingTop: Math.max(insets.top + 12, 28)},
+      ]}>
       <View style={styles.drawerHeader}>
         <Text style={styles.drawerHeaderLabel}>YOUR ACCOUNT</Text>
 
@@ -822,6 +829,15 @@ const styles = StyleSheet.create({
     // shadowOpacity: 0.05,
     // shadowRadius: 6,
     // elevation: 2,
+  },
+
+
+  dashboardHeaderTitle: {
+    flex: 1,
+    marginLeft: 14,
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#1F2C2A',
   },
 
 
