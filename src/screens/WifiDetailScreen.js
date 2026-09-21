@@ -11,6 +11,8 @@ import {
 } from 'react-native';
 import RenderHtml from 'react-native-render-html'; // <-- Renderer import kiya
 
+import PropertyDropdown from '../components/PropertyDropdown';
+
 export default function WiFiDetailsScreen({ navigation, insets }) {
   const { width } = useWindowDimensions(); // Screen width li
   const [isPropertyOpen, setIsPropertyOpen] = useState(false);

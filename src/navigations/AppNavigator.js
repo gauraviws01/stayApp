@@ -37,6 +37,7 @@ import WorkProgressDetail from '../screens/WorkProgressDetail';
 import DashboardDetail from '../screens/DashboardDetail';
 import CalendarScreen from '../screens/CalendarScreen';
 import InventoryDetailScreen from '../screens/InventoryDetailScreen';
+import {PropertyProvider} from '../components/PropertyContext';
 
 
 const Stack = createNativeStackNavigator();
@@ -465,6 +466,8 @@ const AppNavigator = () => {
         translucent={false}
       />
 
+      <PropertyProvider>
+
       <NavigationContainer>
 
         <Stack.Navigator
@@ -564,6 +567,8 @@ const AppNavigator = () => {
         </Stack.Navigator>
 
       </NavigationContainer>
+
+      </PropertyProvider>
     </>
   );
 };

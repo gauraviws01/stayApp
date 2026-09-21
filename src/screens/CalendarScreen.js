@@ -1826,11 +1826,11 @@ const styles =
     ================================================== */
 
     topActionRow: {
-      flexDirection:
-        'row',
+      // flexDirection:
+      //   'row',
 
-      alignItems:
-        'center',
+      // alignItems:
+      //   'center',
 
       marginHorizontal:
         wp(4),
