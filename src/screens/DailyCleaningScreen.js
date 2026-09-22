@@ -93,6 +93,8 @@ const DailyCleaningScreen = ({navigation}) => {
   });
   const [savedRooms, setSavedRooms] = useState([]);
   const [activeMedia, setActiveMedia] = useState(null);
+  const [activeMediaItem, setActiveMediaItem] = useState(null);
+  const [videoAspectRatio, setVideoAspectRatio] = useState(16 / 9);
 
   const todayKey = getDateKey(new Date());
   const calendarDates = useMemo(() => getCalendarDays(calendarMonth), [calendarMonth]);
@@ -181,6 +183,14 @@ const DailyCleaningScreen = ({navigation}) => {
       })
     : 'Select date';
 
+  const openRoomMedia = room => {
+    const mediaItems = getRoomMedia(room);
+    const video = mediaItems.find(item => item.type === 'video');
+    setVideoAspectRatio(video?.width && video?.height ? video.width / video.height : 16 / 9);
+    setActiveMediaItem(video || mediaItems[0] || null);
+    setActiveMedia(room);
+  };
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -234,7 +244,7 @@ const DailyCleaningScreen = ({navigation}) => {
             <TouchableOpacity
               activeOpacity={0.85}
               style={styles.mediaPreview}
-              onPress={() => setActiveMedia(room)}>
+              onPress={() => openRoomMedia(room)}>
               <View style={styles.mediaTint} />
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaListPreview}>
                 {getRoomMedia(room).map((item, index) => (
@@ -242,8 +252,17 @@ const DailyCleaningScreen = ({navigation}) => {
                     {item.type === 'photo' ? (
                       <Image source={{uri: item.uri}} style={styles.mediaImage} />
                     ) : (
-                      <View style={styles.videoPreviewIcon}>
-                        <Text style={styles.playIcon}>▶</Text>
+                      <View style={styles.videoThumbnail}>
+                        <Video
+                          source={{uri: item.uri}}
+                          style={styles.videoThumbnailImage}
+                          resizeMode="cover"
+                          paused
+                          muted
+                        />
+                        <View style={styles.videoPreviewIcon}>
+                          <Text style={styles.playIcon}>▶</Text>
+                        </View>
                       </View>
                     )}
                   </View>
@@ -350,30 +369,36 @@ const DailyCleaningScreen = ({navigation}) => {
         visible={Boolean(activeMedia)}
         transparent
         animationType="fade"
-        onRequestClose={() => setActiveMedia(null)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => setActiveMedia(null)}>
+        onRequestClose={() => { setActiveMedia(null); setActiveMediaItem(null); }}>
+        <Pressable style={styles.modalBackdrop} onPress={() => { setActiveMedia(null); setActiveMediaItem(null); }}>
           <Pressable style={styles.mediaModal} onPress={event => event.stopPropagation()}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{activeMedia?.title}</Text>
-              <TouchableOpacity onPress={() => setActiveMedia(null)}>
+              <TouchableOpacity onPress={() => { setActiveMedia(null); setActiveMediaItem(null); }}>
                 <Text style={styles.closeText}>×</Text>
               </TouchableOpacity>
             </View>
-            {activeMedia && getRoomMedia(activeMedia)[0]?.type === 'video' ? (
+            {activeMediaItem?.type === 'video' ? (
               <Video
                 source={{
                   uri:
-                    getRoomMedia(activeMedia)[0]?.uri ||
+                    activeMediaItem.uri ||
                     'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
                 }}
-                style={styles.video}
-                resizeMode="cover"
+                style={[styles.video, {aspectRatio: videoAspectRatio}]}
+                resizeMode="contain"
                 controls
                 paused={!activeMedia}
+                onLoad={event => {
+                  const naturalSize = event?.naturalSize;
+                  if (naturalSize?.width && naturalSize?.height) {
+                    setVideoAspectRatio(naturalSize.width / naturalSize.height);
+                  }
+                }}
               />
             ) : (
               <Image
-                source={{uri: getRoomMedia(activeMedia)[0]?.uri}}
+                source={{uri: activeMediaItem?.uri}}
                 style={styles.video}
                 resizeMode="contain"
               />
@@ -429,6 +454,8 @@ const styles = StyleSheet.create({
   mediaPreview: {width: '100%', height: 72, borderRadius: 11, overflow: 'hidden', backgroundColor: '#DCECE4', marginTop: 14, justifyContent: 'center'},
   mediaListPreview: {paddingHorizontal: 6, alignItems: 'center'},
   mediaItemPreview: {width: 60, height: 60, borderRadius: 9, overflow: 'hidden', backgroundColor: '#AFCFC0', marginHorizontal: 4, alignItems: 'center', justifyContent: 'center'},
+  videoThumbnail: {width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center'},
+  videoThumbnailImage: {position: 'absolute', width: '100%', height: '100%'},
   mediaTint: {position: 'absolute', inset: 0, backgroundColor: '#AFCFC0'},
   mediaImage: {width: '100%', height: '100%', resizeMode: 'cover'},
   videoPreviewIcon: {width: 34, height: 34, borderRadius: 17, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center'},
@@ -445,5 +472,5 @@ const styles = StyleSheet.create({
   modalHeader: {minHeight: 55, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
   modalTitle: {fontSize: 16, fontWeight: '800', color: '#173A30'},
   closeText: {fontSize: 28, color: '#536B60'},
-  video: {width: '100%', height: 230, backgroundColor: '#152A22'},
+  video: {width: '100%', aspectRatio: 16 / 9, backgroundColor: '#152A22'},
 });

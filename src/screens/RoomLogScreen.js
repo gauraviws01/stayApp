@@ -14,6 +14,7 @@ import {
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {launchCamera, launchImageLibrary} from 'react-native-image-picker';
+import Video from 'react-native-video';
 import PageHeader from '../components/PageHeader';
 
 const STORAGE_KEY = 'dailyCleaningRooms';
@@ -100,6 +101,8 @@ const RoomLogScreen = ({navigation, route}) => {
         uri: asset.uri,
         type: asset.type?.startsWith('video') ? 'video' : 'photo',
         fileName: asset.fileName || asset.uri.split('/').pop() || 'Uploaded file',
+        width: asset.width,
+        height: asset.height,
       }));
 
     if (selectedMedia.length) {
@@ -157,7 +160,7 @@ const RoomLogScreen = ({navigation, route}) => {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <PageHeader navigation={navigation} title="Daily cleaning checklist" />
+        <PageHeader navigation={navigation} title="Daily cleaning checklist" showMenu={false} />
 
         <Text style={styles.label}>CLEANING DATE</Text>
         <View style={[styles.dateValue, styles.readOnlyInput]}>
@@ -193,11 +196,23 @@ const RoomLogScreen = ({navigation, route}) => {
                 {item.type === 'photo' ? (
                   <Image source={{uri: item.uri}} style={styles.mediaThumbnail} />
                 ) : (
-                  <View style={styles.mediaIcon}>
-                    <Text style={styles.mediaIconText}>▶</Text>
-                  </View>
+                  <Video
+                    source={{uri: item.uri}}
+                    style={styles.mediaThumbnail}
+                    resizeMode="cover"
+                    paused
+                    muted
+                  />
                 )}
                 <Text style={styles.mediaFileName} numberOfLines={1}>{item.fileName}</Text>
+                {!isReadOnly && (
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={styles.removeMediaButton}
+                    onPress={() => setMedia(current => current.filter((_, mediaIndex) => mediaIndex !== index))}>
+                    <Text style={styles.removeMediaText}>×</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             )) : (
               <Text style={styles.mediaPickerText}>No files uploaded</Text>
@@ -246,6 +261,8 @@ const styles = StyleSheet.create({
   mediaIcon: {width: 30, height: 30, borderRadius: 7, backgroundColor: '#DDF5E8', alignItems: 'center', justifyContent: 'center', marginRight: 8},
   mediaIconText: {fontSize: 9, fontWeight: '800', color: '#287954'},
   mediaFileName: {flex: 1, fontSize: 12, color: '#287954'},
+  removeMediaButton: {width: 28, height: 28, borderRadius: 14, backgroundColor: '#FDECEC', alignItems: 'center', justifyContent: 'center', marginLeft: 8},
+  removeMediaText: {fontSize: 20, lineHeight: 22, color: '#C84F4F'},
   mediaPickerText: {fontSize: 11, fontWeight: '700', color: '#438B6D', textAlign: 'center', paddingHorizontal: 8},
   uploadActions: {marginLeft: 12, gap: 8},
   uploadButton: {borderWidth: 1, borderColor: '#B9DCC8', backgroundColor: '#FFFFFF', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9},

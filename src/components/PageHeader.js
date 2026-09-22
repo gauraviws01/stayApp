@@ -24,7 +24,9 @@ const PageHeader = ({navigation, title, showMenu = true, onMenuPress}) => {
         activeOpacity={0.8}
         onPress={handleMenuPress}
         style={styles.backButton}>
-        <Text style={styles.backText}>{showMenu ? '☰' : '‹'}</Text>
+        <Text style={showMenu ? styles.menuText : styles.backText}>
+          {showMenu ? '☰' : '‹'}
+        </Text>
       </TouchableOpacity>
       <Text style={styles.title}>{title}</Text>
       <View style={styles.placeholder} />
@@ -37,7 +39,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
+    paddingHorizontal: 10,
     paddingBottom: 12,
   },
   backButton: {
@@ -48,7 +50,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backText: {fontSize: 19, color: '#17B978', lineHeight: 22},
+  backText: {fontSize: 30, color: '#17B978', lineHeight: 30},
+  menuText: {fontSize: 22, color: '#17B978', lineHeight: 24},
   title: {fontSize: 18, fontWeight: '800', color: '#1F2D2A'},
   placeholder: {width: 36, height: 36},
 });

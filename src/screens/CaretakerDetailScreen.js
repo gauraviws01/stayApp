@@ -55,8 +55,13 @@ const CaretakerDetailScreen = ({navigation}) => {
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.content, {paddingBottom: insets.bottom + 32}]}>
-          <View style={styles.detailCard}>
-            <Text style={styles.detailText}>{caretakerDetails[selectedIndex % caretakerDetails.length]}</Text>
+          <View style={styles.networkCard}>
+            <View style={styles.networkHeader}>
+              <Text style={styles.networkName}>Caretaker details</Text>
+            </View>
+            <View style={styles.editorContentWrap}>
+              <Text style={styles.detailText}>{caretakerDetails[selectedIndex % caretakerDetails.length]}</Text>
+            </View>
           </View>
         </ScrollView>
       </View>
@@ -175,6 +180,26 @@ const styles = StyleSheet.create({
     borderColor: '#DDEAE4',
     padding: 18,
   },
+  networkCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#DDEAE4',
+    padding: 16,
+  },
+  networkHeader: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF3F1',
+    paddingBottom: 10,
+    marginBottom: 12,
+  },
+  networkName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1F2D2A',
+    letterSpacing: 0.5,
+  },
+  editorContentWrap: {paddingVertical: 4},
   detailText: {
     color: '#1F2D2A',
     fontSize: 16,
