@@ -159,9 +159,8 @@ const RoomLogScreen = ({navigation, route}) => {
 
   return (
     <SafeAreaView style={styles.container}>
+      <PageHeader navigation={navigation} title="Daily cleaning checklist" showMenu={false} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <PageHeader navigation={navigation} title="Daily cleaning checklist" showMenu={false} />
-
         <Text style={styles.label}>CLEANING DATE</Text>
         <View style={[styles.dateValue, styles.readOnlyInput]}>
           <Text style={styles.dateValueText}>{date}</Text>

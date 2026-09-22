@@ -41,6 +41,7 @@ import InventoryDetailScreen from '../screens/InventoryDetailScreen';
 import RoomLogScreen from '../screens/RoomLogScreen';
 import {PropertyProvider} from '../components/PropertyContext';
 import PageHeader from '../components/PageHeader';
+import UserIcon from '../components/UserSvg';
 
 
 const Stack = createNativeStackNavigator();
@@ -78,6 +79,7 @@ const DashboardHomeScreen = () => {
       <PageHeader
         navigation={navigation}
         title="Dashboard"
+        showMenu
         onMenuPress={openDrawer}
       />
 
@@ -98,7 +100,6 @@ const DailyCleaningHomeScreen = () => {
       <PageHeader
         navigation={navigation}
         title="Daily Cleaning"
-        onMenuPress={openDrawer}
       />
 
       <DailyCleaningScreen
@@ -346,7 +347,9 @@ const DrawerContent = ({
 
       <View style={styles.profileCard}>
         <View style={styles.profileAvatar}>
-          <Text style={styles.profileAvatarText}>👤</Text>
+          <Text style={styles.profileAvatarText}>
+            <UserIcon size={20} color="#FFFFFF" />
+          </Text>
         </View>
 
         <View style={styles.profileInfo}>

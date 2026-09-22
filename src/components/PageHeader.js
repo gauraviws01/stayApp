@@ -2,7 +2,7 @@ import React from 'react';
 import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
-const PageHeader = ({navigation, title, showMenu = true, onMenuPress}) => {
+const PageHeader = ({navigation, title, showMenu = false, onMenuPress}) => {
   const insets = useSafeAreaInsets();
 
   const handleMenuPress = () => {
@@ -15,7 +15,12 @@ const PageHeader = ({navigation, title, showMenu = true, onMenuPress}) => {
       return;
     }
 
-    navigation?.goBack?.();
+    if (navigation?.canGoBack?.()) {
+      navigation.goBack();
+      return;
+    }
+
+    navigation?.navigate?.('MainApp');
   };
 
   return (
