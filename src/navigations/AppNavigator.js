@@ -1,4 +1,4 @@
-import React, {useCallback, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 
 import {
   View,
@@ -184,6 +184,43 @@ const DrawerContent = ({
 
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
+  const [email, setEmail] = useState('');
+  const [userName, setUserName] = useState('');
+
+  useEffect(() => {
+    const loadEmail = async () => {
+      try {
+        const storedUser = await AsyncStorage.getItem('user');
+        const storedLoginResponse = await AsyncStorage.getItem('loginResponse');
+        const user = storedUser ? JSON.parse(storedUser) : null;
+        const loginResponse = storedLoginResponse
+          ? JSON.parse(storedLoginResponse)
+          : null;
+        setEmail(
+          user?.email ||
+            user?.email_address ||
+            loginResponse?.email ||
+            loginResponse?.admin?.email ||
+            '',
+        );
+        setUserName(
+          user?.name ||
+            [user?.first_name, user?.last_name].filter(Boolean).join(' ') ||
+            user?.full_name ||
+            user?.fullName ||
+            user?.display_name ||
+            loginResponse?.admin?.name ||
+            loginResponse?.admin?.full_name ||
+            'Signed-in user',
+        );
+      } catch (error) {
+        setEmail('');
+        setUserName('Signed-in user');
+      }
+    };
+
+    loadEmail();
+  }, []);
 
   const quickAccessItems = [
     {
@@ -323,7 +360,7 @@ const DrawerContent = ({
         {paddingTop: Math.max(insets.top + 12, 28)},
       ]}>
       <View style={styles.drawerHeader}>
-        <Text style={styles.drawerHeaderLabel}>YOUR ACCOUNT</Text>
+        <Text style={styles.drawerHeaderLabel}>My Profile</Text>
 
         <View style={styles.drawerHeaderActions}>
           <TouchableOpacity activeOpacity={0.8} style={styles.iconActionButton} onPress={closeDrawer}>
@@ -332,21 +369,18 @@ const DrawerContent = ({
         </View>
       </View>
 
-      <Text style={styles.drawerTitle}>Profile</Text>
+      {/* <Text style={styles.drawerTitle}>Account</Text> */}
 
       <View style={styles.profileCard}>
         <View style={styles.profileAvatar}>
-          <Text style={styles.profileAvatarText}>KG</Text>
+          <Text style={styles.profileAvatarText}>👤</Text>
         </View>
 
         <View style={styles.profileInfo}>
-          <Text style={styles.profileName}>Kushal Garg</Text>
-          <Text style={styles.profileRole}>Property manager</Text>
-          <Text style={styles.profileLink}>View profile</Text>
+          <Text style={styles.profileName}>{userName || 'Signed-in user'}</Text>
+          <Text style={styles.profileRole}>{email || 'Signed-in account'}</Text>
         </View>
       </View>
-
-      <Text style={styles.quickAccessTitle}>QUICK ACCESS</Text>
 
       <View style={styles.drawerMenu}>
         {quickAccessItems.map(item => (
@@ -361,7 +395,6 @@ const DrawerContent = ({
 
             <View style={styles.drawerItemTextWrap}>
               <Text style={styles.drawerItemLabel}>{item.title}</Text>
-              <Text style={styles.drawerItemSubtitle}>{item.subtitle}</Text>
             </View>
 
             <Text style={styles.drawerArrow}>›</Text>

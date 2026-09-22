@@ -1,4 +1,4 @@
-import React, {useMemo, useState} from 'react';
+import React, {useEffect, useState} from 'react';
 
 import {
   Alert,
@@ -9,68 +9,124 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  SafeAreaView,
 } from 'react-native';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {launchImageLibrary} from 'react-native-image-picker';
+import {launchCamera, launchImageLibrary} from 'react-native-image-picker';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
 const STORAGE_KEY = 'dailyCleaningRooms';
 const PRIMARY = '#176B50';
 const BACKGROUND = '#F4F8F5';
 
-const getDateOptions = selectedDateValue => {
-  const today = selectedDateValue ? new Date(`${selectedDateValue}T12:00:00`) : new Date();
-  return Array.from({length: 7}, (_, index) => {
-    const date = new Date(today);
-    date.setDate(today.getDate() + index - 3);
-    return {
-      key: date.toISOString().slice(0, 10),
-      month: date.toLocaleDateString('en-US', {month: 'short'}).toUpperCase(),
-      number: date.getDate(),
-    };
-  });
+const getStoredMedia = room => {
+  if (Array.isArray(room?.media)) {
+    return room.media;
+  }
+
+  return room?.mediaUri
+    ? [{
+        uri: room.mediaUri,
+        type: room.mediaType || 'photo',
+        fileName: room.mediaName || 'Uploaded file',
+      }]
+    : [];
 };
 
 const RoomLogScreen = ({navigation, route}) => {
+  const insets = useSafeAreaInsets();
   const existingRoom = route?.params?.room;
-  const isReadOnly = Boolean(existingRoom);
-  const [date, setDate] = useState(route?.params?.date || existingRoom?.date || '');
-  const [title, setTitle] = useState(existingRoom?.title || '');
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const date = route?.params?.date || existingRoom?.date || '';
+  const [dateRoom, setDateRoom] = useState(null);
+  const [title, setTitle] = useState(existingRoom?.title || route?.params?.sectionTitle || '');
   const [description, setDescription] = useState(existingRoom?.description || '');
-  const [media, setMedia] = useState(
-    existingRoom?.mediaUri
-      ? {uri: existingRoom.mediaUri, type: existingRoom.mediaType}
-      : null,
-  );
+  const [media, setMedia] = useState(getStoredMedia(existingRoom));
+  const displayedRoom = existingRoom || dateRoom;
+  const isReadOnly = date < todayKey;
 
-  const dateOptions = useMemo(
-    () => getDateOptions(date || existingRoom?.date),
-    [date, existingRoom?.date],
-  );
+  useEffect(() => {
+    if (existingRoom || !date) {
+      return;
+    }
 
-  const chooseMedia = async () => {
+    const loadRoomForDate = async () => {
+      try {
+        const storedRooms = await AsyncStorage.getItem(STORAGE_KEY);
+        const rooms = storedRooms ? JSON.parse(storedRooms) : [];
+        const room = rooms.find(
+          item =>
+            item.property === route?.params?.property &&
+            item.date === date &&
+            item.title === route?.params?.sectionTitle,
+        );
+        setDateRoom(room || null);
+      } catch (error) {
+        setDateRoom(null);
+      }
+    };
+
+    loadRoomForDate();
+  }, [date, existingRoom, route?.params?.property, route?.params?.sectionTitle]);
+
+  useEffect(() => {
+    if (!displayedRoom) {
+      setTitle(route?.params?.sectionTitle || '');
+      setDescription('');
+      setMedia([]);
+      return;
+    }
+
+    setTitle(displayedRoom.title || '');
+    setDescription(displayedRoom.description || '');
+    setMedia(getStoredMedia(displayedRoom));
+  }, [displayedRoom, route?.params?.sectionTitle]);
+
+  const chooseMedia = async source => {
     if (isReadOnly) {
       return;
     }
 
-    const result = await launchImageLibrary({
+    const picker = source === 'camera' ? launchCamera : launchImageLibrary;
+    const result = await picker({
       mediaType: 'mixed',
-      selectionLimit: 1,
+      selectionLimit: source === 'camera' ? 1 : 0,
       videoQuality: 'low',
     });
 
-    const asset = result.assets?.[0];
-    if (asset?.uri) {
-      setMedia({
+    const selectedMedia = (result.assets || [])
+      .filter(asset => asset?.uri)
+      .map(asset => ({
         uri: asset.uri,
         type: asset.type?.startsWith('video') ? 'video' : 'photo',
-      });
+        fileName: asset.fileName || asset.uri.split('/').pop() || 'Uploaded file',
+      }));
+
+    if (selectedMedia.length) {
+      setMedia(currentMedia => [...currentMedia, ...selectedMedia]);
     }
   };
 
+  const openUploadOptions = () => {
+    if (isReadOnly) {
+      return;
+    }
+
+    Alert.alert('Upload', 'Choose a source', [
+      {text: 'Camera', onPress: () => chooseMedia('camera')},
+      {text: 'Gallery', onPress: () => chooseMedia('gallery')},
+      {text: 'Cancel', style: 'cancel'},
+    ]);
+  };
+
   const saveRoom = async () => {
+    if (isReadOnly) {
+      return;
+    }
+
     if (!date || !title.trim() || !description.trim()) {
-      Alert.alert('Missing details', 'Please add a date, room title, and room log.');
+      Alert.alert('Missing details', 'Please add a date, section, and comment.');
       return;
     }
 
@@ -78,16 +134,18 @@ const RoomLogScreen = ({navigation, route}) => {
       const storedRooms = await AsyncStorage.getItem(STORAGE_KEY);
       const rooms = storedRooms ? JSON.parse(storedRooms) : [];
       const room = {
-        id: existingRoom?.id || `${Date.now()}`,
-        property: route?.params?.property || existingRoom?.property || '',
+        id: displayedRoom?.id || `${Date.now()}`,
+        property: route?.params?.property || displayedRoom?.property || '',
         date,
         title: title.trim(),
         description: description.trim(),
-        mediaUri: media?.uri || '',
-        mediaType: media?.type || '',
+        media,
+        mediaUri: media[0]?.uri || '',
+        mediaType: media[0]?.type || '',
+        mediaName: media[0]?.fileName || '',
       };
-      const updatedRooms = existingRoom
-        ? rooms.map(item => (item.id === existingRoom.id ? room : item))
+      const updatedRooms = displayedRoom
+        ? rooms.map(item => (item.id === displayedRoom.id ? room : item))
         : [...rooms, room];
 
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedRooms));
@@ -98,75 +156,78 @@ const RoomLogScreen = ({navigation, route}) => {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.headerRow}>
+        <View style={[styles.headerRow, {paddingTop: Math.max(insets.top, 16) + 8}]}>
           <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
             <Text style={styles.backText}>‹</Text>
           </TouchableOpacity>
           <View>
-            <Text style={styles.eyebrow}>DAILY CLEANING</Text>
-            <Text style={styles.title}>{isReadOnly ? 'Room log' : 'Add room'}</Text>
+            <Text style={styles.title}>Daily cleaning checklist</Text>
           </View>
         </View>
 
         <Text style={styles.label}>CLEANING DATE</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dateScroll}>
-          {dateOptions.map(option => (
-            <TouchableOpacity
-              key={option.key}
-              disabled={isReadOnly}
-              style={[styles.dateCard, date === option.key && styles.activeDateCard]}
-              onPress={() => setDate(option.key)}>
-              <Text style={styles.dateMonth}>{option.month}</Text>
-              <Text style={styles.dateNumber}>{option.number}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        <View style={[styles.dateValue, styles.readOnlyInput]}>
+          <Text style={styles.dateValueText}>{date}</Text>
+        </View>
 
-        <Text style={styles.label}>ROOM TITLE</Text>
+        <Text style={styles.label}>SECTION</Text>
         <TextInput
-          editable={!isReadOnly}
+          editable={false}
           value={title}
-          onChangeText={setTitle}
-          placeholder="e.g. Standard room"
+          placeholder="Selected section"
           placeholderTextColor="#9AAEA4"
-          style={[styles.input, isReadOnly && styles.readOnlyInput]}
+          style={[styles.input, styles.readOnlyInput]}
         />
 
-        <Text style={styles.label}>ROOM LOG</Text>
+        <Text style={styles.label}>COMMENT</Text>
         <TextInput
           editable={!isReadOnly}
           multiline
           value={description}
           onChangeText={setDescription}
-          placeholder="Write the cleaning details..."
+          placeholder="Add a comment about the cleaning..."
           placeholderTextColor="#9AAEA4"
           style={[styles.logInput, isReadOnly && styles.readOnlyInput]}
           textAlignVertical="top"
         />
 
-        <Text style={styles.label}>PHOTO OR VIDEO</Text>
-        <TouchableOpacity
-          activeOpacity={0.85}
-          style={styles.mediaPicker}
-          onPress={chooseMedia}>
-          {media?.type === 'photo' ? (
-            <Image source={{uri: media.uri}} style={styles.mediaImage} />
-          ) : (
-            <Text style={styles.mediaPickerText}>
-              {media?.type === 'video' ? 'VIDEO SELECTED' : isReadOnly ? 'No media added' : '+ Add photo or video'}
-            </Text>
+        <Text style={styles.label}>UPLOAD</Text>
+        <View style={[styles.mediaPicker, isReadOnly && styles.readOnlyInput]}>
+          <View style={styles.mediaList}>
+            {media.length ? media.map((item, index) => (
+              <View key={`${item.uri}-${index}`} style={styles.mediaRow}>
+                {item.type === 'photo' ? (
+                  <Image source={{uri: item.uri}} style={styles.mediaThumbnail} />
+                ) : (
+                  <View style={styles.mediaIcon}>
+                    <Text style={styles.mediaIconText}>▶</Text>
+                  </View>
+                )}
+                <Text style={styles.mediaFileName} numberOfLines={1}>{item.fileName}</Text>
+              </View>
+            )) : (
+              <Text style={styles.mediaPickerText}>No files uploaded</Text>
+            )}
+          </View>
+          {!isReadOnly && (
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={styles.uploadButton}
+              onPress={openUploadOptions}>
+              <Text style={styles.uploadButtonText}>Upload</Text>
+            </TouchableOpacity>
           )}
-        </TouchableOpacity>
+        </View>
 
         {!isReadOnly && (
           <TouchableOpacity activeOpacity={0.85} style={styles.saveButton} onPress={saveRoom}>
-            <Text style={styles.saveText}>Save room</Text>
+            <Text style={styles.saveText}>Save</Text>
           </TouchableOpacity>
         )}
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -181,17 +242,22 @@ const styles = StyleSheet.create({
   eyebrow: {fontSize: 11, fontWeight: '800', letterSpacing: 1.5, color: '#7C9489'},
   title: {fontSize: 25, fontWeight: '800', color: '#173A30', marginTop: 4},
   label: {fontSize: 11, fontWeight: '800', letterSpacing: 1.5, color: '#849890', marginTop: 20, marginBottom: 9},
-  dateScroll: {marginHorizontal: -4},
-  dateCard: {width: 66, height: 58, borderRadius: 13, borderWidth: 1, borderColor: '#DCE8E1', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginHorizontal: 4},
-  activeDateCard: {backgroundColor: '#DDF5E8', borderColor: '#9EDDBB'},
-  dateMonth: {fontSize: 10, fontWeight: '800', letterSpacing: 1, color: '#7D9289'},
-  dateNumber: {fontSize: 17, fontWeight: '700', color: '#617970', marginTop: 5},
+  dateValue: {height: 52, borderWidth: 1, borderColor: '#D9E5DE', borderRadius: 12, justifyContent: 'center', paddingHorizontal: 15},
+  dateValueText: {fontSize: 14, fontWeight: '700', color: '#617970'},
   input: {height: 52, borderWidth: 1, borderColor: '#D9E5DE', borderRadius: 12, backgroundColor: '#FFFFFF', paddingHorizontal: 15, color: '#173A30', fontSize: 14},
   logInput: {height: 150, borderWidth: 1, borderColor: '#D9E5DE', borderRadius: 14, backgroundColor: '#FFFFFF', padding: 15, color: '#173A30', fontSize: 14, lineHeight: 21},
   readOnlyInput: {backgroundColor: '#F0F6F2'},
-  mediaPicker: {height: 110, width: 110, borderRadius: 14, borderWidth: 1, borderStyle: 'dashed', borderColor: '#9EDDBB', backgroundColor: '#F8FCF9', alignItems: 'center', justifyContent: 'center', overflow: 'hidden'},
-  mediaImage: {width: '100%', height: '100%'},
+  mediaPicker: {minHeight: 110, width: '100%', borderRadius: 14, borderWidth: 1, borderStyle: 'dashed', borderColor: '#9EDDBB', backgroundColor: '#F8FCF9', flexDirection: 'row', alignItems: 'center', padding: 12, overflow: 'hidden'},
+  mediaList: {flex: 1, minHeight: 82, justifyContent: 'center'},
+  mediaRow: {flexDirection: 'row', alignItems: 'center', marginVertical: 3},
+  mediaThumbnail: {width: 44, height: 44, borderRadius: 8, marginRight: 8},
+  mediaIcon: {width: 30, height: 30, borderRadius: 7, backgroundColor: '#DDF5E8', alignItems: 'center', justifyContent: 'center', marginRight: 8},
+  mediaIconText: {fontSize: 9, fontWeight: '800', color: '#287954'},
+  mediaFileName: {flex: 1, fontSize: 12, color: '#287954'},
   mediaPickerText: {fontSize: 11, fontWeight: '700', color: '#438B6D', textAlign: 'center', paddingHorizontal: 8},
+  uploadActions: {marginLeft: 12, gap: 8},
+  uploadButton: {borderWidth: 1, borderColor: '#B9DCC8', backgroundColor: '#FFFFFF', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9},
+  uploadButtonText: {fontSize: 12, fontWeight: '700', color: '#287954'},
   saveButton: {alignSelf: 'flex-start', marginTop: 28, backgroundColor: PRIMARY, borderRadius: 14, paddingHorizontal: 18, paddingVertical: 13},
   saveText: {fontSize: 13, fontWeight: '800', color: '#FFFFFF'},
 });

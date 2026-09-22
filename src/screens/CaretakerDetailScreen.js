@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -9,34 +9,32 @@ import {
   SafeAreaView,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import PropertyDropdown from '../components/PropertyDropdown';
+import {useProperty} from '../components/PropertyContext';
 
 const CaretakerDetailScreen = ({navigation}) => {
   const insets = useSafeAreaInsets();
-  const [selectedProperty, setSelectedProperty] = useState(
-    'Sereno Greens - Cosy 1 BHK with Pvt Balcony',
+  const {units, selectedUnit, handleUnitChange} = useProperty();
+  const fallbackProperties = [
+    {unit_id: 'property-1', unit_name: 'Sereno Greens - Cosy 1 BHK with Pvt Balcony'},
+    {unit_id: 'property-2', unit_name: 'Sereno Ikigai - 4BHK Villa with Pool'},
+    {unit_id: 'property-3', unit_name: 'Sereno Bloom - Penthouse Suite'},
+  ];
+
+  // Temporary text until the property API provides the PMS textarea value.
+  const caretakerDetails = [
+    'Caretaker details for Sereno Greens.',
+    'Caretaker details for Sereno Ikigai.',
+    'Caretaker details for Sereno Bloom.',
+  ];
+  const propertyList = units.length ? units : fallbackProperties;
+  const selectedProperty = selectedUnit || propertyList[0];
+  const selectedIndex = Math.max(
+    propertyList.findIndex(
+      property => String(property.unit_id) === String(selectedProperty?.unit_id),
+    ),
+    0,
   );
-  const [isPropertyOpen, setIsPropertyOpen] = useState(false);
-
-  const propertyOptions = [
-    'Sereno Greens - Cosy 1 BHK with Pvt Balcony',
-    'Sereno Ikigai - 4BHK Villa with Pool',
-    'Sereno Bloom - Penthouse Suite',
-  ];
-
-  const caretakerList = [
-    {
-      name: 'Ravi Kumar',
-      role: 'Housekeeping Lead',
-      phone: '+91 98765 43210',
-      shift: 'Morning shift'
-    },
-    {
-      name: 'Asha Verma',
-      role: 'Guest Support',
-      phone: '+91 99887 66554',
-      shift: 'Evening shift',
-    },
-  ];
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -57,74 +55,20 @@ const CaretakerDetailScreen = ({navigation}) => {
         </View>
 
         <View style={styles.propertySelectorWrap}>
-          <Text style={styles.propertyLabel}>PROPERTY</Text>
-
-          <TouchableOpacity
-            activeOpacity={0.9}
-            style={styles.propertySelector}
-            onPress={() => setIsPropertyOpen(!isPropertyOpen)}>
-            <Text style={styles.propertyText} numberOfLines={1}>
-              {selectedProperty}
-            </Text>
-            <Text style={styles.propertyChevron}>{isPropertyOpen ? '⌃' : '⌄'}</Text>
-          </TouchableOpacity>
-
-          {isPropertyOpen && (
-            <View style={styles.dropdownMenu}>
-              {propertyOptions.map(option => (
-                <TouchableOpacity
-                  key={option}
-                  activeOpacity={0.8}
-                  style={[
-                    styles.dropdownItem,
-                    selectedProperty === option && styles.dropdownItemActive,
-                  ]}
-                  onPress={() => {
-                    setSelectedProperty(option);
-                    setIsPropertyOpen(false);
-                  }}>
-                  <Text
-                    style={[
-                      styles.dropdownItemText,
-                      selectedProperty === option && styles.dropdownItemTextActive,
-                    ]}>
-                    {option}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
+          <PropertyDropdown
+            selectedValue={selectedProperty?.unit_id}
+            selectedLabel={selectedProperty?.unit_name}
+            fallbackProperties={fallbackProperties}
+            onChange={(_, property) => handleUnitChange(property)}
+          />
         </View>
 
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.content, {paddingBottom: insets.bottom + 32}]}>
-          <View style={styles.heroCard}>
-            <View style={styles.iconWrap}>
-              <Text style={styles.icon}>👥</Text>
-            </View>
-
-            <Text style={styles.heroTitle}>On-property support</Text>
-            <Text style={styles.heroSubtitle}>Staff contacts & shift coverage</Text>
+          <View style={styles.detailCard}>
+            <Text style={styles.detailText}>{caretakerDetails[selectedIndex % caretakerDetails.length]}</Text>
           </View>
-
-          {caretakerList.map(item => (
-            <View key={item.name} style={styles.personCard}>
-
-              <View style={styles.personInfo}>
-                <Text style={styles.personName}>{item.name}</Text>
-                <Text style={styles.personRole}>{item.role}</Text>
-              </View>
-
-
-              <View style={styles.metaBlock}>
-                <Text style={styles.metaLabel}>Phone</Text>
-                <Text style={styles.metaValue}>{item.phone}</Text>
-                <Text style={styles.metaLabel}>Shift</Text>
-                <Text style={styles.metaValue}>{item.shift}</Text>
-              </View>
-            </View>
-          ))}
         </ScrollView>
       </View>
     </SafeAreaView>
@@ -234,6 +178,18 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 18,
     paddingBottom: 32,
+  },
+  detailCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#DDEAE4',
+    padding: 18,
+  },
+  detailText: {
+    color: '#1F2D2A',
+    fontSize: 16,
+    lineHeight: 25,
   },
   heroCard: {
     backgroundColor: '#FFFFFF',
