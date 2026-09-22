@@ -18,6 +18,8 @@ import Svg, {Path} from 'react-native-svg';
 import {useFocusEffect} from '@react-navigation/native';
 
 import PropertyDropdown from '../components/PropertyDropdown';
+import EyeIcon from '../components/EyeIcon';
+import EditIcon from '../components/EditIcon';
 
 const PRIMARY = '#17B978';
 const BACKGROUND = '#F4F8F5';
@@ -82,6 +84,19 @@ const CalendarIcon = () => (
     />
   </Svg>
 );
+
+// const EditIcon = () => (
+//   <Svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+//     <Path
+//       d="m4 16-.8 4.8L8 20l11.6-11.6a2.8 2.8 0 0 0-4-4L4 16Z"
+//       stroke="#287954"
+//       strokeWidth="1.8"
+//       strokeLinecap="round"
+//       strokeLinejoin="round"
+//     />
+//     <Path d="m14 6 4 4" stroke="#287954" strokeWidth="1.8" strokeLinecap="round" />
+//   </Svg>
+// );
 
 const DailyCleaningScreen = ({navigation}) => {
   const [selectedProperty, setSelectedProperty] = useState('');
@@ -275,8 +290,10 @@ const DailyCleaningScreen = ({navigation}) => {
               activeOpacity={0.8}
               style={styles.editButton}
               onPress={() => openEditRoom(room)}>
-              <Text style={styles.editIcon}>⌕</Text>
-              <Text style={styles.editText}>Edit</Text>
+              <Text style={styles.editIcon}>
+                {isPastDate ? <EyeIcon size={16} color="#287954" /> : <EditIcon size={16} color="#287954" />}
+              </Text>
+              <Text style={styles.editText}>{isPastDate ? 'View' : 'Edit'}</Text>
             </TouchableOpacity>
             </>}
           </View>

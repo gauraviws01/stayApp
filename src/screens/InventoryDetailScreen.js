@@ -1,6 +1,7 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 
 import {
+  Alert,
   View,
   Text,
   StyleSheet,
@@ -272,8 +273,10 @@ const InventoryDetailScreen = ({navigation}) => {
         JSON.stringify(inventory),
       );
       richText.current?.blurContentEditor?.();
+      Alert.alert('Saved', 'Inventory details have been saved successfully.');
     } catch (error) {
       console.log('SAVE INVENTORY ERROR:', error);
+      Alert.alert('Save failed', 'Unable to save inventory details. Please try again.');
     }
 
     console.log('====================================');
