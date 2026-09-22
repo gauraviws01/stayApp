@@ -40,6 +40,7 @@ import DailyCleaningScreen from '../screens/DailyCleaningScreen';
 import InventoryDetailScreen from '../screens/InventoryDetailScreen';
 import RoomLogScreen from '../screens/RoomLogScreen';
 import {PropertyProvider} from '../components/PropertyContext';
+import PageHeader from '../components/PageHeader';
 
 
 const Stack = createNativeStackNavigator();
@@ -65,8 +66,6 @@ const DrawerContext = React.createContext({
 // ==================================================
 
 const DashboardHomeScreen = () => {
-  const insets = useSafeAreaInsets();
-
   const {
     openDrawer,
   } = React.useContext(DrawerContext);
@@ -76,28 +75,11 @@ const DashboardHomeScreen = () => {
   return (
     <View style={styles.dashboardHomeContainer}>
 
-      <View
-        style={[
-          styles.dashboardHeaderBar,
-          {
-            paddingTop: Math.max(insets.top, 12) + 8,
-          },
-        ]}>
-
-        <TouchableOpacity
-          activeOpacity={0.8}
-          style={styles.dashboardDrawerButton}
-          onPress={openDrawer}>
-
-          <Text style={styles.dashboardDrawerIcon}>
-            ☰
-          </Text>
-
-        </TouchableOpacity>
-
-        <Text style={styles.dashboardHeaderTitle}>Dashboard</Text>
-
-      </View>
+      <PageHeader
+        navigation={navigation}
+        title="Dashboard"
+        onMenuPress={openDrawer}
+      />
 
       <DashboardScreen
         navigation={navigation}
@@ -108,25 +90,16 @@ const DashboardHomeScreen = () => {
 };
 
 const DailyCleaningHomeScreen = () => {
-  const insets = useSafeAreaInsets();
   const {openDrawer} = React.useContext(DrawerContext);
   const navigation = useNavigation();
 
   return (
     <View style={styles.dashboardHomeContainer}>
-      <View
-        style={[
-          styles.dashboardHeaderBar,
-          {paddingTop: Math.max(insets.top, 12) + 8},
-        ]}>
-        <TouchableOpacity
-          activeOpacity={0.8}
-          style={styles.dashboardDrawerButton}
-          onPress={openDrawer}>
-          <Text style={styles.dashboardDrawerIcon}>☰</Text>
-        </TouchableOpacity>
-        <Text style={styles.dashboardHeaderTitle}>Daily Cleaning</Text>
-      </View>
+      <PageHeader
+        navigation={navigation}
+        title="Daily Cleaning"
+        onMenuPress={openDrawer}
+      />
 
       <DailyCleaningScreen
         navigation={navigation}
@@ -227,7 +200,7 @@ const DrawerContent = ({
       icon: '📶',
       iconColor: '#38BFA5',
       bg: '#EAF7F3',
-      title: 'WiFi',
+      title: 'Wifi/Electricity details',
       subtitle: 'Access points & passwords',
       route: 'WifiDetail',
     },
@@ -416,6 +389,7 @@ const DrawerContent = ({
 // ==================================================
 
 const MainApp = ({route}) => {
+  const navigation = useNavigation();
 
   const selectedScreen =
     route?.params?.screen === 'CalendarScreen'
@@ -456,6 +430,15 @@ const MainApp = ({route}) => {
       setDrawerVisible(false);
     });
   }, [drawerAnimation]);
+
+  useEffect(() => {
+    if (!route?.params?.openDrawer) {
+      return;
+    }
+
+    openDrawer();
+    navigation?.setParams?.({openDrawer: false});
+  }, [navigation, openDrawer, route?.params?.openDrawer]);
 
   return (
     <DrawerContext.Provider
@@ -740,7 +723,7 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     backgroundColor: '#DDEEE7',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     marginLeft: 10,
   },
 
@@ -905,10 +888,12 @@ const styles = StyleSheet.create({
 
 
   dashboardHeaderBar: {
+    position: 'relative',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 18,
+    minHeight: 58,
     // paddingTop: 12,
     // paddingBottom: 12,
     // backgroundColor: '#FFFFFF',
@@ -923,8 +908,11 @@ const styles = StyleSheet.create({
 
 
   dashboardHeaderTitle: {
-    flex: 1,
-    marginLeft: 14,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    pointerEvents: 'none',
     fontSize: 22,
     fontWeight: '800',
     color: '#1F2C2A',
@@ -938,6 +926,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8F9F2',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+
+  dashboardHeaderRightSlot: {
+    width: 42,
+    height: 42,
   },
 
 

@@ -1,4 +1,4 @@
-import React, {useMemo, useRef, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 
 import {
   View,
@@ -8,25 +8,22 @@ import {
   StatusBar,
   SafeAreaView,
   Modal,
-  Dimensions,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
 } from 'react-native';
 
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Svg, {Path} from 'react-native-svg';
+import PropertyDropdown from '../components/PropertyDropdown';
+import PageHeader from '../components/PageHeader';
 
 import {
   RichEditor,
   RichToolbar,
   actions,
 } from 'react-native-pell-rich-editor';
-
-const {width, height} = Dimensions.get('window');
-
-const wp = value => (width * value) / 100;
-const hp = value => (height * value) / 100;
-
 
 /* =========================================================
    PROPERTY OPTIONS
@@ -37,6 +34,27 @@ const propertyOptions = [
   'Sereno Ikigai - 4BHK Villa with Pool',
   'Sereno Bloom - Penthouse Suite',
 ];
+
+const INVENTORY_STORAGE_KEY = 'inventoryDetails';
+
+const getDateKey = date => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const CalendarIcon = () => (
+  <Svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M7 3v3M17 3v3M4 9h16M6 5h12a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"
+      stroke="#287954"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
 
 
 /* =========================================================
@@ -104,7 +122,6 @@ const InventoryDetailScreen = ({navigation}) => {
     propertyOptions[0],
   );
 
-  const [isPropertyOpen, setIsPropertyOpen] = useState(false);
 
 
   /* -------------------------------------------------------
@@ -131,6 +148,7 @@ const InventoryDetailScreen = ({navigation}) => {
   const richText = useRef(null);
 
   const [inventoryHtml, setInventoryHtml] = useState();
+  const [loadingInventory, setLoadingInventory] = useState(true);
 
 
   /* -------------------------------------------------------
@@ -151,12 +169,56 @@ const InventoryDetailScreen = ({navigation}) => {
     },
   );
 
+  const todayKey = getDateKey(today);
+  const selectedDateKey = getDateKey(selectedDate);
+  const isPastDate = selectedDateKey < todayKey;
+  const isFutureDate = selectedDateKey > todayKey;
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadInventory = async () => {
+      setLoadingInventory(true);
+
+      try {
+        const storedInventory = await AsyncStorage.getItem(INVENTORY_STORAGE_KEY);
+        const inventory = storedInventory ? JSON.parse(storedInventory) : {};
+        const key = `${selectedProperty}::${selectedDateKey}`;
+        const html = inventory[key] || '';
+
+        if (mounted) {
+          setInventoryHtml(html);
+          richText.current?.setContentHTML(html);
+        }
+      } catch (error) {
+        if (mounted) {
+          setInventoryHtml('');
+          richText.current?.setContentHTML('');
+        }
+      } finally {
+        if (mounted) {
+          setLoadingInventory(false);
+        }
+      }
+    };
+
+    loadInventory();
+
+    return () => {
+      mounted = false;
+    };
+  }, [selectedProperty, selectedDateKey]);
+
 
   /* =========================================================
      DATE HANDLERS
   ========================================================= */
 
   const handleSelectDate = date => {
+    if (getDateKey(date) > todayKey) {
+      return;
+    }
+
     setSelectedDate(
       new Date(
         date.getFullYear(),
@@ -170,12 +232,22 @@ const InventoryDetailScreen = ({navigation}) => {
 
 
   const changeMonth = step => {
+    const nextMonth = new Date(
+      calendarMonth.getFullYear(),
+      calendarMonth.getMonth() + step,
+      1,
+    );
+
+    if (
+      nextMonth.getFullYear() > today.getFullYear() ||
+      (nextMonth.getFullYear() === today.getFullYear() &&
+        nextMonth.getMonth() > today.getMonth())
+    ) {
+      return;
+    }
+
     setCalendarMonth(
-      new Date(
-        calendarMonth.getFullYear(),
-        calendarMonth.getMonth() + step,
-        1,
-      ),
+      nextMonth,
     );
   };
 
@@ -184,7 +256,26 @@ const InventoryDetailScreen = ({navigation}) => {
      SAVE
   ========================================================= */
 
-  const handleSaveInventory = () => {
+  const handleSaveInventory = async () => {
+    if (isPastDate || isFutureDate || loadingInventory) {
+      return;
+    }
+
+    try {
+      const storedInventory = await AsyncStorage.getItem(INVENTORY_STORAGE_KEY);
+      const inventory = storedInventory ? JSON.parse(storedInventory) : {};
+      const key = `${selectedProperty}::${selectedDateKey}`;
+
+      inventory[key] = inventoryHtml || '';
+      await AsyncStorage.setItem(
+        INVENTORY_STORAGE_KEY,
+        JSON.stringify(inventory),
+      );
+      richText.current?.blurContentEditor?.();
+    } catch (error) {
+      console.log('SAVE INVENTORY ERROR:', error);
+    }
+
     console.log('====================================');
     console.log('PROPERTY:', selectedProperty);
     console.log('DATE:', selectedDate);
@@ -232,37 +323,7 @@ const InventoryDetailScreen = ({navigation}) => {
             HEADER
         ================================================= */}
 
-        <View
-          style={[
-            styles.header,
-            {
-              paddingTop:
-                Math.max(insets.top, 16) + 8,
-            },
-          ]}>
-
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() =>
-              navigation?.goBack?.()
-            }
-            style={styles.backButton}>
-
-            <Text style={styles.backText}>
-              {'‹'}
-            </Text>
-
-          </TouchableOpacity>
-
-
-          <Text style={styles.headerTitle}>
-            Inventory
-          </Text>
-
-
-          <View style={styles.placeholder} />
-
-        </View>
+        <PageHeader navigation={navigation} title="Inventory" />
 
 
         {/* =================================================
@@ -286,90 +347,12 @@ const InventoryDetailScreen = ({navigation}) => {
           ================================================= */}
 
           <View style={styles.propertySelectorWrap}>
-
-            <Text style={styles.propertyLabel}>
-              PROPERTY
-            </Text>
-
-
-            <TouchableOpacity
-              activeOpacity={0.9}
-              style={styles.propertySelector}
-              onPress={() =>
-                setIsPropertyOpen(
-                  !isPropertyOpen,
-                )
-              }>
-
-              <Text
-                style={styles.propertyText}
-                numberOfLines={1}>
-
-                {selectedProperty}
-
-              </Text>
-
-
-              <Text
-                style={styles.propertyChevron}>
-
-                {isPropertyOpen
-                  ? '⌃'
-                  : '⌄'}
-
-              </Text>
-
-            </TouchableOpacity>
-
-
-            {/* DROPDOWN */}
-
-            {isPropertyOpen && (
-              <View
-                style={styles.dropdownMenu}>
-
-                {propertyOptions.map(
-                  option => (
-
-                    <TouchableOpacity
-                      key={option}
-                      activeOpacity={0.8}
-                      style={[
-                        styles.dropdownItem,
-                        selectedProperty ===
-                          option &&
-                          styles.dropdownItemActive,
-                      ]}
-                      onPress={() => {
-                        setSelectedProperty(
-                          option,
-                        );
-
-                        setIsPropertyOpen(
-                          false,
-                        );
-                      }}>
-
-                      <Text
-                        style={[
-                          styles.dropdownItemText,
-                          selectedProperty ===
-                            option &&
-                            styles.dropdownItemTextActive,
-                        ]}>
-
-                        {option}
-
-                      </Text>
-
-                    </TouchableOpacity>
-
-                  ),
-                )}
-
-              </View>
-            )}
-
+            <PropertyDropdown
+              selectedValue={selectedProperty}
+              selectedLabel={selectedProperty}
+              fallbackProperties={propertyOptions}
+              onChange={property => setSelectedProperty(property)}
+            />
           </View>
 
 
@@ -377,97 +360,28 @@ const InventoryDetailScreen = ({navigation}) => {
               DATE SELECTOR
           ================================================= */}
 
+            <Text style={styles.dateLabel}>DATE</Text>
           <TouchableOpacity
             activeOpacity={0.9}
-            style={styles.dateSelector}
-            onPress={() =>
-              setCalendarVisible(true)
-            }>
-
-            <View style={styles.dateLeftWrap}>
-
-              <View style={styles.dateIconBox}>
-
-                <Text style={styles.dateIcon}>
-                  🗓
-                </Text>
-
-              </View>
-
-
-              <View style={styles.dateTextWrap}>
-
-                <Text style={styles.dateLabel}>
-                  CHOOSE A DATE
-                </Text>
-
-                <Text style={styles.dateValue}>
-                  {formatDisplayDate(
-                    selectedDate,
-                  )}
-                </Text>
-
-              </View>
-
-            </View>
-
-
-            <Text style={styles.dateChevron}>
-              {'›'}
-            </Text>
-
+            style={styles.dateInput}
+            onPress={() => setCalendarVisible(true)}>
+            <Text style={styles.dateInputText}>{formatDisplayDate(selectedDate)}</Text>
+            <CalendarIcon />
           </TouchableOpacity>
 
 
-          {/* =================================================
-              INVENTORY DETAILS
-          ================================================= */}
-
           <View style={styles.detailSection}>
-
-
-            {/* SECTION HEADER */}
-
             <View style={styles.sectionHeader}>
-
-              <View
-                style={styles.sectionIconWrap}>
-
-                <Text style={styles.sectionIcon}>
-                  📝
-                </Text>
-
+              <View style={styles.sectionIconWrap}>
+                <Text style={styles.sectionIcon}>📝</Text>
               </View>
-
-
               <View style={styles.sectionHeaderText}>
-
-                <Text style={styles.sectionTitle}>
-                  Inventory details
-                </Text>
-
-                <Text
-                  style={styles.sectionSubtitle}>
-
-                  Add notes and inventory
-                  information
-
-                </Text>
-
+                <Text style={styles.sectionTitle}>Inventory details</Text>
+                <Text style={styles.sectionSubtitle}>Add notes and inventory information</Text>
               </View>
-
             </View>
 
-
-            {/* =================================================
-                RICH TEXT TOOLBAR + EDITOR
-            ================================================= */}
-
-            <View
-              style={styles.richEditorWrapper}>
-
-
-              {/* TOOLBAR */}
+            <View style={styles.richEditorWrapper}>
 
               <RichToolbar
                 editor={richText}
@@ -486,6 +400,7 @@ const InventoryDetailScreen = ({navigation}) => {
                 iconTint="#355C50"
                 selectedIconTint="#17B978"
                 disabledIconTint="#AAB8B3"
+                disabled={isPastDate || isFutureDate || loadingInventory}
                 style={styles.richToolbar}
                 flatContainerStyle={
                   styles.richToolbarContainer
@@ -493,11 +408,10 @@ const InventoryDetailScreen = ({navigation}) => {
               />
 
 
-              {/* EDITOR */}
-
               <RichEditor
                 ref={richText}
-                initialContentHTML={inventoryHtml}
+                initialContentHTML={inventoryHtml || ''}
+                disabled={isPastDate || isFutureDate || loadingInventory}
                 onChange={html => {
                   setInventoryHtml(html);
                 }}
@@ -526,36 +440,12 @@ const InventoryDetailScreen = ({navigation}) => {
             </View>
 
 
-            {/* =================================================
-                FORMAT INFO
-            ================================================= */}
-
-            <View
-              style={styles.formatInfo}>
-
-              <View
-                style={styles.formatInfoIcon}>
-
-                <Text
-                  style={
-                    styles.formatInfoIconText
-                  }>
-                  i
-                </Text>
-
+            <View style={styles.formatInfo}>
+              <View style={styles.formatInfoIcon}>
+                <Text style={styles.formatInfoIconText}>i</Text>
               </View>
-
-
-              <Text
-                style={styles.formatInfoText}>
-
-                Select any text and use the
-                toolbar to format it.
-
-              </Text>
-
+              <Text style={styles.formatInfoText}>Select any text and use the toolbar to format it.</Text>
             </View>
-
           </View>
 
 
@@ -563,6 +453,7 @@ const InventoryDetailScreen = ({navigation}) => {
               SAVE BUTTON
           ================================================= */}
 
+          {!isPastDate && !isFutureDate && !loadingInventory && (
           <TouchableOpacity
             activeOpacity={0.9}
             style={styles.submitButton}
@@ -571,11 +462,12 @@ const InventoryDetailScreen = ({navigation}) => {
             <Text
               style={styles.submitButtonText}>
 
-              Save inventory
+              Save
 
             </Text>
 
           </TouchableOpacity>
+          )}
 
 
         </ScrollView>
@@ -711,6 +603,7 @@ const InventoryDetailScreen = ({navigation}) => {
                     <TouchableOpacity
                       key={day.toISOString()}
                       activeOpacity={0.8}
+                      disabled={getDateKey(day) > todayKey}
                       onPress={() =>
                         handleSelectDate(
                           day,
@@ -718,6 +611,7 @@ const InventoryDetailScreen = ({navigation}) => {
                       }
                       style={[
                         styles.dayCell,
+                        getDateKey(day) > todayKey && styles.dayCellDisabled,
                         isSelected &&
                           styles.dayCellSelected,
                       ]}>
@@ -728,6 +622,9 @@ const InventoryDetailScreen = ({navigation}) => {
 
                           !isCurrentMonth &&
                             styles.dayTextMuted,
+
+                          getDateKey(day) > todayKey &&
+                            styles.dayTextDisabled,
 
                           isSelected &&
                             styles.dayTextSelected,
@@ -943,69 +840,33 @@ const styles = StyleSheet.create({
      DATE
   ======================================================= */
 
-  dateSelector: {
+  dateInput: {
+    height: 54,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#F4F9F5',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#D8EAE2',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    borderColor: '#D9E5DE',
+    borderRadius: 13,
+    paddingHorizontal: 16,
     marginBottom: 20,
   },
 
 
-  dateLeftWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-
-
-  dateIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: '#EAF7F3',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-
-
-  dateIcon: {
-    fontSize: 18,
-  },
-
-
-  dateTextWrap: {
-    flex: 1,
-  },
-
-
   dateLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.6,
-    color: '#5F7D72',
-    textTransform: 'uppercase',
-    marginBottom: 2,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    color: '#849890',
+    marginBottom: 8,
   },
 
 
-  dateValue: {
+  dateInputText: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#1F2D2A',
-  },
-
-
-  dateChevron: {
-    fontSize: 24,
-    color: '#1F2D2A',
-    marginLeft: 8,
+    color: '#173A30',
   },
 
 
@@ -1266,6 +1127,11 @@ const styles = StyleSheet.create({
   },
 
 
+  dayCellDisabled: {
+    opacity: 0.35,
+  },
+
+
   dayCellEmpty: {
     width: '14.285%',
     height: 40,
@@ -1286,6 +1152,11 @@ const styles = StyleSheet.create({
 
   dayTextSelected: {
     color: '#FFFFFF',
+  },
+
+
+  dayTextDisabled: {
+    color: '#A0AAA7',
   },
 
 

@@ -4,7 +4,6 @@ import {
   ScrollView, 
   View, 
   Text, 
-  TouchableOpacity,
   StatusBar, 
   SafeAreaView, 
   useWindowDimensions
@@ -13,6 +12,7 @@ import RenderHtml from 'react-native-render-html';
 
 import PropertyDropdown from '../components/PropertyDropdown';
 import {useProperty} from '../components/PropertyContext';
+import PageHeader from '../components/PageHeader';
 
 export default function WiFiDetailsScreen({ navigation, insets }) {
   const {width} = useWindowDimensions();
@@ -62,18 +62,7 @@ export default function WiFiDetailsScreen({ navigation, insets }) {
       <StatusBar barStyle="dark-content" backgroundColor="#F3F7F4" translucent={false} />
 
       <View style={styles.container}>
-        {/* Header Section */}
-        <View style={[styles.header, {paddingTop: Math.max(insets?.top || 0, 16) + 8}]}>
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => navigation?.goBack?.()}
-            style={styles.backButton}>
-            <Text style={styles.backText}>{'‹'}</Text>
-          </TouchableOpacity>
-
-          <Text style={styles.headerTitle}>WiFi Details</Text>
-          <View style={styles.placeholder} />
-        </View>
+        <PageHeader navigation={navigation} title="Wifi/Electricity details" />
 
         <View style={styles.propertySelectorWrap}>
           <PropertyDropdown
@@ -91,7 +80,7 @@ export default function WiFiDetailsScreen({ navigation, insets }) {
               
               {/* Card Header (Title & Badge) */}
               <View style={styles.networkHeader}>
-                <Text style={styles.networkName}>WiFi details</Text>
+                <Text style={styles.networkName}>Wifi/Electricity details</Text>
               </View>
 
               {/* Text Editor se aane wala Static HTML data display krne k liye wrap */}

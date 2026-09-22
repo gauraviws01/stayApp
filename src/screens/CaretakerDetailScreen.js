@@ -4,13 +4,13 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   StatusBar,
   SafeAreaView,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import PropertyDropdown from '../components/PropertyDropdown';
 import {useProperty} from '../components/PropertyContext';
+import PageHeader from '../components/PageHeader';
 
 const CaretakerDetailScreen = ({navigation}) => {
   const insets = useSafeAreaInsets();
@@ -41,18 +41,7 @@ const CaretakerDetailScreen = ({navigation}) => {
       <StatusBar barStyle="dark-content" backgroundColor="#F3F7F4" translucent={false} />
 
       <View style={styles.container}>
-        <View style={[styles.header, {paddingTop: Math.max(insets.top, 16) + 8}]}>
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => navigation?.goBack?.()}
-            style={styles.backButton}>
-            <Text style={styles.backText}>{'‹'}</Text>
-          </TouchableOpacity>
-
-          <Text style={styles.headerTitle}>Caretaker</Text>
-
-          <View style={styles.placeholder} />
-        </View>
+        <PageHeader navigation={navigation} title="Caretaker" />
 
         <View style={styles.propertySelectorWrap}>
           <PropertyDropdown

@@ -14,7 +14,7 @@ import {
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {launchCamera, launchImageLibrary} from 'react-native-image-picker';
-import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import PageHeader from '../components/PageHeader';
 
 const STORAGE_KEY = 'dailyCleaningRooms';
 const PRIMARY = '#176B50';
@@ -35,7 +35,6 @@ const getStoredMedia = room => {
 };
 
 const RoomLogScreen = ({navigation, route}) => {
-  const insets = useSafeAreaInsets();
   const existingRoom = route?.params?.room;
   const todayKey = new Date().toISOString().slice(0, 10);
   const date = route?.params?.date || existingRoom?.date || '';
@@ -158,14 +157,7 @@ const RoomLogScreen = ({navigation, route}) => {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={[styles.headerRow, {paddingTop: Math.max(insets.top, 16) + 8}]}>
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-            <Text style={styles.backText}>‹</Text>
-          </TouchableOpacity>
-          <View>
-            <Text style={styles.title}>Daily cleaning checklist</Text>
-          </View>
-        </View>
+        <PageHeader navigation={navigation} title="Daily cleaning checklist" />
 
         <Text style={styles.label}>CLEANING DATE</Text>
         <View style={[styles.dateValue, styles.readOnlyInput]}>
