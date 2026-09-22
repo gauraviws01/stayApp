@@ -136,6 +136,7 @@ const DailyCleaningScreen = ({navigation}) => {
   }, [selectedDate, todayKey]);
 
   const isPastDate = selectedDate < todayKey;
+  const showSections = Boolean(selectedProperty && selectedDate);
 
   const getRoomForSection = section =>
     savedRooms.find(
@@ -230,9 +231,11 @@ const DailyCleaningScreen = ({navigation}) => {
           <CalendarIcon />
         </TouchableOpacity>
 
-        <View style={styles.roomsHeader}>
-          <Text style={styles.sectionLabel}>SECTIONS</Text>
-        </View>
+        {showSections && (
+          <>
+            <View style={styles.roomsHeader}>
+              <Text style={styles.sectionLabel}>SECTIONS</Text>
+            </View>
 
         {DEFAULT_SECTIONS.map(section => {
           const room = getRoomForSection(section);
@@ -300,10 +303,7 @@ const DailyCleaningScreen = ({navigation}) => {
           );
         })}
 
-        {!selectedProperty && (
-          <Text style={styles.emptyRoomsText}>
-            Select a property to view its cleaning sections.
-          </Text>
+          </>
         )}
       </ScrollView>
 
