@@ -80,12 +80,24 @@ const PropertyDropdown = ({
           : [];
         const fallbackList = normalizeProperties(fallbackProperties);
 
+        console.log('PROPERTY DROPDOWN STORED DATA:', storedProperties);
+        console.log('PROPERTY DROPDOWN PARSED DATA:', parsedProperties);
+        console.log('PROPERTY DROPDOWN STORED LIST:', storedList);
+        console.log('PROPERTY DROPDOWN FALLBACK LIST:', fallbackList);
+
+        const finalList = storedList.length ? storedList : fallbackList;
+        console.log('PROPERTY DROPDOWN FINAL LIST:', finalList);
+
         if (mounted) {
-          setProperties(storedList.length ? storedList : fallbackList);
+          setProperties(finalList);
         }
       } catch (error) {
+        console.log('PROPERTY DROPDOWN LOAD ERROR:', error);
+        const fallbackList = normalizeProperties(fallbackProperties);
+        console.log('PROPERTY DROPDOWN FALLBACK AFTER ERROR:', fallbackList);
+
         if (mounted) {
-          setProperties(normalizeProperties(fallbackProperties));
+          setProperties(fallbackList);
         }
       } finally {
         if (mounted) {
