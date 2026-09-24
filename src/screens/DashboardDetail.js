@@ -4,12 +4,12 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   StatusBar,
   Dimensions,
 } from 'react-native';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import PageHeader from '../components/PageHeader';
 
 const { width, height } = Dimensions.get('window');
 
@@ -92,48 +92,23 @@ const BookingDetail = ({ navigation, route }) => {
         backgroundColor="#F6F8F7"
         translucent={false}
       />
-
+ 
       <View style={styles.container}>
+        <PageHeader
+          navigation={navigation}
+          title={String(bookingId)}
+        />
+
         <ScrollView
           showsVerticalScrollIndicator={false}
           bounces={true}
-          contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={[
             styles.scrollContent,
             {
-              /*
-               * Status bar ke according automatic top space
-               * + thoda extra premium spacing
-               */
-              paddingTop: insets.top + hp(1.5),
-
-              /*
-               * Bottom safe area bhi automatically
-               */
               paddingBottom: insets.bottom + hp(6),
             },
           ]}
         >
-          {/* ================= TOP BAR ================= */}
-
-          <View style={styles.topBar}>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => navigation?.goBack?.()}
-              style={styles.backButton}
-            >
-              <Text style={styles.backText}>{'‹'}</Text>
-            </TouchableOpacity>
-
-            <Text style={styles.bookingIdText} numberOfLines={1}>
-              {bookingId}
-            </Text>
-
-            <TouchableOpacity activeOpacity={0.8} style={styles.menuButton}>
-              <Text style={styles.menuText}>{'⋯'}</Text>
-            </TouchableOpacity>
-          </View>
-
           {/* ================= RESERVATION ================= */}
 
           <Text style={styles.sectionLabel}>RESERVATION</Text>
@@ -422,50 +397,6 @@ const styles = StyleSheet.create({
    */
   scrollContent: {
     paddingHorizontal: wp(4),
-  },
-
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: hp(2),
-  },
-
-  backButton: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  backText: {
-    fontSize: 30,
-    fontWeight: '400',
-    color: '#111827',
-    lineHeight: 32,
-  },
-
-  bookingIdText: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1D1F1D',
-    letterSpacing: 1,
-    marginHorizontal: 10,
-  },
-
-  menuButton: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  menuText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#202926',
   },
 
   sectionLabel: {

@@ -20,6 +20,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import PropertyDropdown from '../components/PropertyDropdown';
+import PageHeader from '../components/PageHeader';
 
 
 const {width, height} = Dimensions.get('window');
@@ -1273,6 +1274,11 @@ const CalendarScreen = ({navigation}) => {
         style={
           styles.container
         }>
+
+        <PageHeader
+          navigation={navigation}
+          title="Maintenance"
+        />
 
         <ScrollView
           style={

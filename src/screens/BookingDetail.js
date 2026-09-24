@@ -15,6 +15,8 @@ import {
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import PageHeader from '../components/PageHeader';
+
 const PRIMARY = '#17B978';
 const DARK = '#222222';
 const BACKGROUND = '#F3F4F8';
@@ -1634,41 +1636,10 @@ const BookingDetail = ({
         }
       />
 
-      {/* HEADER */}
-
-      <View
-        style={
-          styles.header
-        }>
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={() =>
-            navigation.goBack()
-          }
-          style={
-            styles.backButton
-          }>
-          <Text
-            style={
-              styles.backArrow
-            }>
-            ‹
-          </Text>
-        </TouchableOpacity>
-
-        <Text
-          style={
-            styles.headerTitle
-          }>
-          Booking Details
-        </Text>
-
-        <View
-          style={
-            styles.headerSpace
-          }
-        />
-      </View>
+      <PageHeader
+        navigation={navigation}
+        title="Booking Details"
+      />
 
       {/* CONTENT */}
 
@@ -2137,47 +2108,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor:
       BACKGROUND,
-    paddingTop: 32,
-    paddingBottom: 32,
-  },
-
-  header: {
-    height: 62,
-    backgroundColor:
-      '#FFFFFF',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent:
-      'space-between',
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor:
-      '#E5E5E5',
-  },
-
-  backButton: {
-    width: 42,
-    height: 42,
-    alignItems: 'center',
-    justifyContent:
-      'center',
-  },
-
-  backArrow: {
-    fontSize: 38,
-    lineHeight: 40,
-    color: DARK,
-    fontWeight: '300',
-  },
-
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: DARK,
-  },
-
-  headerSpace: {
-    width: 42,
   },
 
   content: {

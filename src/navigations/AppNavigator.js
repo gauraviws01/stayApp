@@ -111,33 +111,10 @@ const DailyCleaningHomeScreen = () => {
 };
 
 const CalendarHomeScreen = () => {
-  const insets = useSafeAreaInsets();
-
   const navigation = useNavigation();
 
   return (
     <View style={styles.dashboardHomeContainer}>
-
-      <View
-        style={[
-          styles.dashboardHeaderBar,
-          {
-            paddingTop: Math.max(insets.top, 12) + 8,
-          },
-        ]}>
-
-        <TouchableOpacity
-          activeOpacity={0.8}
-          style={styles.dashboardDrawerButton}
-          onPress={() => navigation.navigate('MainApp')}>
-
-          <Text style={styles.dashboardDrawerIcon}>
-            ‹
-          </Text>
-
-        </TouchableOpacity>
-
-      </View>
 
       <CalendarScreen
         navigation={navigation}
@@ -576,6 +553,7 @@ const AppNavigator = () => {
         <Stack.Screen
           name="DashboardDetail"
           component={DashboardDetail}
+          options={{headerShown: false}}
         />
 
         <Stack.Screen
