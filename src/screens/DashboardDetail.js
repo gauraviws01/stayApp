@@ -92,7 +92,7 @@ const BookingDetail = ({ navigation, route }) => {
         backgroundColor="#F6F8F7"
         translucent={false}
       />
-
+ 
       <View style={styles.container}>
         <PageHeader
           navigation={navigation}
