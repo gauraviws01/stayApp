@@ -131,25 +131,184 @@ const stripHtml = html => {
     .trim();
 };
 
+
+// ========================================
+// MEDIA URL
+// ========================================
+
+const normalizeMediaUri = uri => {
+  if (!uri) {
+    return '';
+  }
+
+  const value = String(uri).trim();
+
+  if (!value) {
+    return '';
+  }
+
+  if (
+    value.startsWith('http://') ||
+    value.startsWith('https://')
+  ) {
+    return value;
+  }
+
+  if (value.startsWith('//')) {
+    return `https:${value}`;
+  }
+
+  return `http://staysereno.in/${value.replace(/^\/+/, '')}`;
+};
+
+// ========================================
+// MEDIA TYPE
+// ========================================
+
+const getMediaType = item => {
+  if (!item) {
+    return 'photo';
+  }
+
+  const explicitType =
+    item?.type ||
+    item?.mime_type ||
+    item?.mimeType ||
+    item?.media_type ||
+    item?.file_type ||
+    '';
+
+  const typeString =
+    String(explicitType).toLowerCase();
+
+  // MIME based
+  if (
+    typeString.includes('video')
+  ) {
+    return 'video';
+  }
+
+  if (
+    typeString.includes('image') ||
+    typeString.includes('photo')
+  ) {
+    return 'photo';
+  }
+
+  const uri =
+    item?.uri ||
+    item?.url ||
+    item?.media_url ||
+    item?.file_url ||
+    item?.path ||
+    item?.src ||
+    '';
+
+  const cleanUri =
+    String(uri)
+      .split('?')[0]
+      .split('#')[0]
+      .toLowerCase();
+
+  // Extension based
+  if (
+    /\.(mp4|mov|m4v|webm|avi|mkv|3gp)$/i.test(
+      cleanUri,
+    )
+  ) {
+    return 'video';
+  }
+
+  // Default = image
+  return 'photo';
+};
+
+// ========================================
+// NORMALIZE MEDIA ITEM
+// ========================================
+
+const normalizeMediaItem = item => {
+  if (!item) {
+    return null;
+  }
+
+  // String URL
+  if (typeof item === 'string') {
+    const uri =
+      normalizeMediaUri(item);
+
+    if (!uri) {
+      return null;
+    }
+
+    return {
+      uri,
+      type: getMediaType({
+        uri,
+      }),
+      fileName: 'Media',
+    };
+  }
+
+  const rawUri =
+    item?.uri ||
+    item?.url ||
+    item?.media_url ||
+    item?.file_url ||
+    item?.path ||
+    item?.src ||
+    item?.media_path ||
+    '';
+
+  const uri =
+    normalizeMediaUri(rawUri);
+
+  if (!uri) {
+    return null;
+  }
+
+  return {
+    ...item,
+    uri,
+    type: getMediaType({
+      ...item,
+      uri,
+    }),
+    fileName:
+      item?.fileName ||
+      item?.filename ||
+      item?.name ||
+      'Media',
+  };
+};
+
 // ========================================
 // ROOM MEDIA
 // ========================================
 
 const getRoomMedia = room => {
+  let media = [];
+
   if (Array.isArray(room?.media)) {
-    return room.media;
-  }
-
-  if (Array.isArray(room?.medias)) {
-    return room.medias;
-  }
-
-  if (Array.isArray(room?.images)) {
-    return room.images;
-  }
-
-  if (room?.mediaUri) {
-    return [
+    media = room.media;
+  } else if (
+    Array.isArray(room?.medias)
+  ) {
+    media = room.medias;
+  } else if (
+    Array.isArray(room?.images)
+  ) {
+    media = room.images;
+  } else if (
+    Array.isArray(room?.media_files)
+  ) {
+    media = room.media_files;
+  } else if (
+    Array.isArray(room?.files)
+  ) {
+    media = room.files;
+  } else if (room?.mediaUri) {
+    media = [
       {
         uri: room.mediaUri,
         type:
@@ -162,7 +321,9 @@ const getRoomMedia = room => {
     ];
   }
 
-  return [];
+  return media 
+    .map(normalizeMediaItem)
+    .filter(Boolean);
 };
 
 // ========================================
@@ -311,6 +472,9 @@ const normalizeChecklistRecord = (
     item?.section &&
     typeof item.section === 'object'
       ? item.section
+      : item?.home_section &&
+        typeof item.home_section === 'object'
+      ? item.home_section
       : null;
 
   const sectionId =
@@ -319,7 +483,25 @@ const normalizeChecklistRecord = (
     item?.sectionID ??
     item?.home_section_id ??
     sectionObject?.id ??
-    null;
+    (
+      typeof item?.section ===
+      'number'
+        ? item.section
+        : null
+    );
+
+  const sectionTitle =
+    sectionObject?.name ||
+    sectionObject?.title ||
+    item?.section_name ||
+    item?.sectionTitle ||
+    item?.section_title ||
+    (
+      typeof item?.section ===
+      'string'
+        ? item.section
+        : ''
+    );
 
   const propertyId =
     item?.unit_id ??
@@ -335,62 +517,111 @@ const normalizeChecklistRecord = (
     item?.checklist_date ??
     item?.cleaning_date ??
     item?.cleaningDate ??
+    item?.date_key ??
     item?.created_date ??
+    item?.created_at ??
     selectedDate;
 
   const description =
-    item?.description ??
     item?.comment ??
     item?.comments ??
+    item?.description ??
     item?.remarks ??
     item?.note ??
     '';
 
-  const media =
+  let rawMedia =
     item?.media ??
     item?.medias ??
+    item?.media_files ??
     item?.images ??
     item?.files ??
+    item?.attachments ??
     [];
+
+  // Sometimes API returns JSON string
+  if (
+    typeof rawMedia === 'string'
+  ) {
+    try {
+      const parsed =
+        JSON.parse(rawMedia);
+
+      rawMedia =
+        Array.isArray(parsed)
+          ? parsed
+          : parsed
+          ? [parsed]
+          : [];
+    } catch (error) {
+      rawMedia = rawMedia
+        ? [rawMedia]
+        : [];
+    }
+  }
+
+  // Sometimes API gives object instead of array
+  if (
+    rawMedia &&
+    !Array.isArray(rawMedia) &&
+    typeof rawMedia === 'object'
+  ) {
+    rawMedia = [rawMedia];
+  }
+
+  const normalizedMedia =
+    Array.isArray(rawMedia)
+      ? rawMedia
+          .map(normalizeMediaItem)
+          .filter(Boolean)
+      : [];
+
+  const checklistId =
+    item?.checklistId ??
+    item?.checklist_id ??
+    item?.daily_cleaning_checklist_id ??
+    item?.dailyCleaningChecklistId ??
+    item?.id ??
+    null;
 
   return {
     ...item,
 
-    checklistId:
-      item?.checklistId ??
-      item?.checklist_id ??
-      item?.daily_cleaning_checklist_id ??
-      item?.dailyCleaningChecklistId ??
-      item?.id ??
-      null,
+    checklistId,
 
     checklist_id:
-      item?.checklist_id ??
-      item?.checklistId ??
-      item?.daily_cleaning_checklist_id ??
-      item?.dailyCleaningChecklistId ??
-      item?.id ??
-      null,
+      checklistId,
 
-    propertyId: propertyId,
-    property_id: propertyId,
+    propertyId,
+
+    property_id:
+      propertyId,
+
     unit_id:
       item?.unit_id ??
       propertyId,
 
-    sectionId: sectionId,
-    section_id: sectionId,
+    sectionId,
 
-    date: recordDate,
+    section_id:
+      sectionId,
 
-    description: description,
+    sectionTitle,
+
+    section_name:
+      item?.section_name ??
+      sectionTitle,
+
+    date:
+      recordDate,
+
+    description,
+
     comment:
-      item?.comment ??
       description,
 
-    media: Array.isArray(media)
-      ? media
-      : [],
+    media:
+      normalizedMedia,
   };
 };
 
@@ -1015,271 +1246,241 @@ const DailyCleaningScreen = ({
   // GET PREVIOUS DATE CHECKLIST
   // ======================================
 
-  const loadPreviousDateChecklist =
-    useCallback(async () => {
-      if (
-        !selectedDate ||
-        !selectedPropertyId
-      ) {
+const loadChecklistFromApi =
+  useCallback(async () => {
+    if (
+      !selectedDate ||
+      !selectedPropertyId
+    ) {
+      setSavedRooms([]);
+      return;
+    }
+
+    // Future date
+    if (
+      selectedDate > todayKey
+    ) {
+      setSavedRooms([]);
+      return;
+    }
+
+    try {
+      setApiLoading(true);
+
+      console.log(
+        '================================',
+      );
+
+      console.log(
+        'GET DAILY CLEANING CHECKLIST',
+      );
+
+      console.log(
+        'DATE:',
+        selectedDate,
+      );
+
+      console.log(
+        'PROPERTY ID:',
+        selectedPropertyId,
+      );
+
+      const token =
+        await getAuthToken();
+
+      if (!token) {
+        setSavedRooms([]);
         return;
       }
 
-      // ----------------------------------
-      // ONLY PREVIOUS DATE
-      // ----------------------------------
+      const userId =
+        await getUserId();
 
       if (
-        selectedDate >= todayKey
+        userId === null ||
+        userId === undefined ||
+        userId === ''
       ) {
+        setSavedRooms([]);
         return;
       }
+
+      const url =
+        `${CHECKLIST_API}/${encodeURIComponent(
+          userId,
+        )}`;
+
+      console.log(
+        'CHECKLIST GET URL:',
+        url,
+      );
+
+      const response =
+        await fetch(
+          url,
+          {
+            method: 'GET',
+
+            headers: {
+              Accept:
+                'application/json',
+
+              Authorization:
+                `Bearer ${token}`,
+            },
+          },
+        );
+
+      console.log(
+        'CHECKLIST GET STATUS:',
+        response.status,
+      );
+
+      const responseText =
+        await response.text();
+
+      console.log(
+        'CHECKLIST GET RESPONSE:',
+        responseText,
+      );
+
+      let responseData =
+        null;
 
       try {
-        setApiLoading(true);
-
-        console.log(
-          '================================',
-        );
-
-        console.log(
-          'GET PREVIOUS CHECKLIST',
-        );
-
-        console.log(
-          'DATE:',
-          selectedDate,
-        );
-
-        console.log(
-          'PROPERTY ID:',
-          selectedPropertyId,
-        );
-
-        const token =
-          await getAuthToken();
-
-        if (!token) {
-          console.log(
-            'NO AUTH TOKEN FOR CHECKLIST GET',
+        responseData =
+          JSON.parse(
+            responseText,
           );
-
-          setSavedRooms([]);
-
-          return;
-        }
-
-        const userId =
-          await getUserId();
-
-        if (
-          userId === null ||
-          userId === undefined ||
-          userId === ''
-        ) {
-          console.log(
-            'NO USER ID FOR CHECKLIST GET',
-          );
-
-          setSavedRooms([]);
-
-          return;
-        }
-
-        // --------------------------------
-        // GET API
-        // --------------------------------
-
-        const url =
-          `${CHECKLIST_API}/${encodeURIComponent(
-            userId,
-          )}`;
-
-        console.log(
-          'CHECKLIST GET URL:',
-          url,
-        );
-
-        const response =
-          await fetch(
-            url,
-            {
-              method: 'GET',
-
-              headers: {
-                Accept:
-                  'application/json',
-
-                Authorization:
-                  `Bearer ${token}`,
-              },
-            },
-          );
-
-        console.log(
-          'CHECKLIST GET STATUS:',
-          response.status,
-        );
-
-        const responseText =
-          await response.text();
-
-        console.log(
-          'CHECKLIST GET RESPONSE:',
-          responseText,
-        );
-
-        let responseData = null;
-
-        try {
-          responseData =
-            JSON.parse(
-              responseText,
-            );
-        } catch (error) {
-          console.log(
-            'CHECKLIST GET JSON ERROR:',
-            error,
-          );
-        }
-
-        // --------------------------------
-        // AUTH ERROR
-        // --------------------------------
-
-        if (
-          response.status === 401 ||
-          responseData?.message ===
-            'Unauthenticated.'
-        ) {
-          await handleSessionExpired();
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error(
-            `Checklist GET failed with status ${response.status}`,
-          );
-        }
-
-        // --------------------------------
-        // EXTRACT ARRAY
-        // --------------------------------
-
-        const rawChecklist =
-          extractChecklistArray(
-            responseData,
-          );
-
-        console.log(
-          'RAW CHECKLIST ARRAY:',
-          rawChecklist,
-        );
-
-        // --------------------------------
-        // NORMALIZE
-        // --------------------------------
-
-        const normalizedChecklist =
-          rawChecklist
-            .map(item =>
-              normalizeChecklistRecord(
-                item,
-                selectedPropertyId,
-                selectedDate,
-              ),
-            )
-            .filter(Boolean);
-
-        console.log(
-          'NORMALIZED CHECKLIST:',
-          normalizedChecklist,
-        );
-
-        // --------------------------------
-        // FILTER DATE + PROPERTY
-        // --------------------------------
-
-        const filteredChecklist =
-          normalizedChecklist.filter(
-            item => {
-              // PROPERTY MATCH
-              const itemPropertyId =
-                item?.propertyId ??
-                item?.property_id ??
-                item?.unit_id;
-
-              if (
-                itemPropertyId !==
-                  undefined &&
-                itemPropertyId !==
-                  null &&
-                selectedPropertyId !==
-                  undefined &&
-                selectedPropertyId !==
-                  null
-              ) {
-                if (
-                  String(
-                    itemPropertyId,
-                  ) !==
-                  String(
-                    selectedPropertyId,
-                  )
-                ) {
-                  return false;
-                }
-              }
-
-              // DATE MATCH
-              if (
-                item?.date
-              ) {
-                const apiDate =
-                  String(
-                    item.date,
-                  ).substring(
-                    0,
-                    10,
-                  );
-
-                if (
-                  apiDate !==
-                  selectedDate
-                ) {
-                  return false;
-                }
-              }
-
-              return true;
-            },
-          );
-
-        console.log(
-          'FILTERED PREVIOUS CHECKLIST:',
-          filteredChecklist,
-        );
-
-        setSavedRooms(
-          filteredChecklist,
-        );
       } catch (error) {
         console.log(
-          'GET PREVIOUS CHECKLIST ERROR:',
+          'CHECKLIST JSON ERROR:',
           error,
         );
-
-        setSavedRooms([]);
-      } finally {
-        setApiLoading(false);
       }
-    }, [
-      selectedDate,
-      selectedPropertyId,
-      todayKey,
-      getAuthToken,
-      getUserId,
-      handleSessionExpired,
-    ]);
+
+      if (
+        response.status === 401 ||
+        responseData?.message ===
+          'Unauthenticated.'
+      ) {
+        await handleSessionExpired();
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          `Checklist API failed with status ${response.status}`,
+        );
+      }
+
+      const rawChecklist =
+        extractChecklistArray(
+          responseData,
+        );
+
+      console.log(
+        'RAW CHECKLIST:',
+        rawChecklist,
+      );
+
+      const normalizedChecklist =
+        rawChecklist
+          .map(item =>
+            normalizeChecklistRecord(
+              item,
+              selectedPropertyId,
+              selectedDate,
+            ),
+          )
+          .filter(Boolean);
+
+      console.log(
+        'NORMALIZED CHECKLIST:',
+        normalizedChecklist,
+      );
+
+      // ==================================
+      // FILTER PROPERTY + DATE
+      // ==================================
+
+      const filteredChecklist =
+        normalizedChecklist.filter(
+          item => {
+            // PROPERTY
+            const itemPropertyId =
+              item?.propertyId ??
+              item?.property_id ??
+              item?.unit_id;
+
+            if (
+              itemPropertyId !==
+                undefined &&
+              itemPropertyId !==
+                null
+            ) {
+              if (
+                String(
+                  itemPropertyId,
+                ) !==
+                String(
+                  selectedPropertyId,
+                )
+              ) {
+                return false;
+              }
+            }
+
+            // DATE
+            if (item?.date) {
+              const apiDate =
+                String(
+                  item.date,
+                ).substring(0, 10);
+
+              if (
+                apiDate !==
+                selectedDate
+              ) {
+                return false;
+              }
+            }
+
+            return true;
+          },
+        );
+
+      console.log(
+        'FILTERED CHECKLIST:',
+        filteredChecklist,
+      );
+
+      // ==================================
+      // IMPORTANT
+      // API IS SOURCE OF TRUTH
+      // ==================================
+
+      setSavedRooms(
+        filteredChecklist,
+      );
+    } catch (error) {
+      console.log(
+        'GET CHECKLIST ERROR:',
+        error,
+      );
+
+      setSavedRooms([]);
+    } finally {
+      setApiLoading(false);
+    }
+  }, [
+    selectedDate,
+    selectedPropertyId,
+    todayKey,
+    getAuthToken,
+    getUserId,
+    handleSessionExpired,
+  ]);
 
   // ======================================
   // LOAD SCREEN DATA
@@ -1311,64 +1512,81 @@ const DailyCleaningScreen = ({
   // ======================================
 
   useEffect(() => {
-    if (
-      !selectedDate ||
-      !selectedPropertyId
-    ) {
-      return;
-    }
+  if (
+    !selectedDate ||
+    !selectedPropertyId
+  ) {
+    setSavedRooms([]);
+    return;
+  }
 
-    if (
-      selectedDate < todayKey
-    ) {
-      // Previous date = GET API
-      loadPreviousDateChecklist();
-    } else if (
-      selectedDate === todayKey
-    ) {
-      // Today = local data
-      loadLocalRooms();
-    } else {
-      // Future = nothing
-      setSavedRooms([]);
-    }
-  }, [
-    selectedDate,
-    selectedPropertyId,
-    todayKey,
-    loadPreviousDateChecklist,
-    loadLocalRooms,
-  ]);
+  // ==================================
+  // FUTURE
+  // ==================================
+
+  if (
+    selectedDate > todayKey
+  ) {
+    setSavedRooms([]);
+    return;
+  }
+
+  // ==================================
+  // TODAY + PREVIOUS
+  // API SOURCE OF TRUTH
+  // ==================================
+
+  loadChecklistFromApi();
+}, [
+  selectedDate,
+  selectedPropertyId,
+  todayKey,
+  loadChecklistFromApi,
+]);
+
+useEffect(() => {
+  AsyncStorage.removeItem(
+    ROOMS_STORAGE_KEY,
+  ).catch(error =>
+    console.log(
+      'CLEAR OLD CLEANING STORAGE ERROR:',
+      error,
+    ),
+  );
+}, []);
 
   // ======================================
   // REFRESH ON FOCUS
   // ======================================
 
   useFocusEffect(
-    useCallback(() => {
-      authExpiredAlertShownRef.current =
-        false;
+  useCallback(() => {
+    authExpiredAlertShownRef.current =
+      false;
 
-      loadProperties();
+    loadProperties();
 
-      if (
-        selectedDate <
-        todayKey
-      ) {
-        loadPreviousDateChecklist();
-      } else {
-        loadLocalRooms();
-      }
+    if (
+      selectedDate &&
+      selectedPropertyId &&
+      selectedDate <= todayKey
+    ) {
+      loadChecklistFromApi();
+    } else if (
+      selectedDate > todayKey
+    ) {
+      setSavedRooms([]);
+    }
 
-      return undefined;
-    }, [
-      loadProperties,
-      selectedDate,
-      todayKey,
-      loadPreviousDateChecklist,
-      loadLocalRooms,
-    ]),
-  );
+    return undefined;
+  }, [
+    loadProperties,
+    selectedDate,
+    selectedPropertyId,
+    todayKey,
+    loadChecklistFromApi,
+  ]),
+);
 
   // ======================================
   // DATE CONDITIONS
@@ -1912,41 +2130,43 @@ const DailyCleaningScreen = ({
   // OPEN MEDIA
   // ======================================
 
-  const openRoomMedia =
-    room => {
-      const mediaItems =
-        getRoomMedia(room);
+ const openRoomMedia = (
+  room,
+  selectedItem = null,
+) => {
+  const mediaItems =
+    getRoomMedia(room);
 
-      if (
-        mediaItems.length ===
-        0
-      ) {
-        return;
-      }
+  if (
+    mediaItems.length === 0
+  ) {
+    return;
+  }
 
-      const video =
-        mediaItems.find(
-          item =>
-            item?.type ===
-            'video',
-        );
+  const itemToOpen =
+    selectedItem ||
+    mediaItems[0];
 
-      setVideoAspectRatio(
-        video?.width &&
-          video?.height
-          ? video.width /
-              video.height
-          : 16 / 9,
-      );
+  const mediaType =
+    getMediaType(
+      itemToOpen,
+    );
 
-      setActiveMediaItem(
-        video ||
-          mediaItems[0] ||
-          null,
-      );
+  setVideoAspectRatio(
+    itemToOpen?.width &&
+      itemToOpen?.height
+      ? itemToOpen.width /
+          itemToOpen.height
+      : 16 / 9,
+  );
 
-      setActiveMedia(room);
-    };
+  setActiveMediaItem({
+    ...itemToOpen,
+    type: mediaType,
+  });
+
+  setActiveMedia(room);
+};
 
   // ======================================
   // PROPERTY OPTIONS
@@ -2311,11 +2531,6 @@ const DailyCleaningScreen = ({
                               }
                               style={
                                 styles.mediaPreview
-                              }
-                              onPress={() =>
-                                openRoomMedia(
-                                  room,
-                                )
                               }>
 
                               <View
