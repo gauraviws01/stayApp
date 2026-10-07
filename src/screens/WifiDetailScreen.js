@@ -1,4 +1,9 @@
-import React, {useMemo} from 'react';
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+
 import {
   StyleSheet,
   ScrollView,
@@ -6,13 +11,17 @@ import {
   Text,
   StatusBar,
   SafeAreaView,
+  TouchableOpacity,
   useWindowDimensions,
+  ActivityIndicator,
 } from 'react-native';
-import RenderHtml from 'react-native-render-html';
 
-import PropertyDropdown from '../components/PropertyDropdown';
+import RenderHtml from 'react-native-render-html';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import {useProperty} from '../components/PropertyContext';
 import PageHeader from '../components/PageHeader';
+import {mergePropertyOptions} from '../utils/propertyOptions';
 
 export default function WiFiDetailsScreen({
   navigation,
@@ -27,21 +36,86 @@ export default function WiFiDetailsScreen({
   } = useProperty();
 
   /* =====================================================
+     LOADER
+  ===================================================== */
+
+  const [isChangingProperty, setIsChangingProperty] =
+    useState(false);
+
+  const [isPropertyDropdownOpen, setIsPropertyDropdownOpen] =
+    useState(false);
+
+  /* =====================================================
+     LOCAL SELECTED PROPERTY
+     
+     IMPORTANT:
+     Dropdown se jo fresh property object milta hai,
+     usko direct yahan store karenge.
+  ===================================================== */
+
+  const [localSelectedProperty, setLocalSelectedProperty] =
+    useState(null);
+
+  /* =====================================================
      ALL PROPERTIES / UNITS
   ===================================================== */
 
-  const propertyList = Array.isArray(units)
-    ? units
-    : [];
+  const propertyList = useMemo(() => {
+    return Array.isArray(units) ? units : [];
+  }, [units]);
+
+  const [storedProperties, setStoredProperties] =
+    useState([]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadStoredProperties = async () => {
+      try {
+        const stored = await AsyncStorage.getItem('properties');
+        const parsed = stored ? JSON.parse(stored) : [];
+
+        if (mounted) {
+          setStoredProperties(
+            Array.isArray(parsed) ? parsed : [],
+          );
+        }
+      } catch (error) {
+        console.log('WIFI STORED PROPERTIES ERROR:', error);
+      }
+    };
+
+    loadStoredProperties();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const dropdownPropertyList = useMemo(
+    () => mergePropertyOptions(storedProperties, propertyList),
+    [storedProperties, propertyList],
+  );
+
+  useEffect(() => {
+    console.log(
+      'WIFI DROPDOWN OPTION COUNT:',
+      dropdownPropertyList.length,
+    );
+    console.log(
+      'WIFI DROPDOWN OPTIONS:',
+      dropdownPropertyList.map(property => ({
+        id: property.unit_id,
+        name: property.unit_name,
+      })),
+    );
+  }, [dropdownPropertyList]);
 
   /* =====================================================
-     SELECTED PROPERTY
-     
-     Dropdown se selectedUnit aayega.
-     Usi unit_id ke basis par actual object find hoga.
+     CONTEXT SELECTED PROPERTY
   ===================================================== */
 
-  const selectedProperty = useMemo(() => {
+  const contextSelectedProperty = useMemo(() => {
     if (!propertyList.length) {
       return null;
     }
@@ -79,10 +153,97 @@ export default function WiFiDetailsScreen({
   }, [propertyList, selectedUnit]);
 
   /* =====================================================
-     WIFI / ELECTRICITY DETAILS
+     FINAL SELECTED PROPERTY
+
+     Priority:
+     1. Dropdown se directly selected fresh object
+     2. Context selected property
+  ===================================================== */
+
+  const selectedProperty =
+    localSelectedProperty ||
+    contextSelectedProperty;
+
+  /* =====================================================
+     INITIAL PROPERTY SET
      
-     Selected dropdown property ke object se directly
-     internal_wifi_electricity_account_details liya ja raha hai.
+     Screen open hone par context wali property ko
+     local state mein set karenge.
+  ===================================================== */
+
+  useEffect(() => {
+    if (!localSelectedProperty && contextSelectedProperty) {
+      setLocalSelectedProperty(
+        contextSelectedProperty,
+      );
+    }
+  }, [
+    contextSelectedProperty,
+    localSelectedProperty,
+  ]);
+
+  /* =====================================================
+     IMPORTANT:
+     Agar context se selected property change hoti hai
+     aur local selection nahi hai, tab update karo.
+     
+     Lekin dropdown se manually selected fresh object
+     ko overwrite nahi karenge.
+  ===================================================== */
+
+  useEffect(() => {
+    if (!localSelectedProperty) {
+      return;
+    }
+
+    const localId =
+      localSelectedProperty?.unit_id ??
+      localSelectedProperty?.id;
+
+    const contextId =
+      contextSelectedProperty?.unit_id ??
+      contextSelectedProperty?.id;
+
+    if (
+      localId === undefined ||
+      localId === null ||
+      contextId === undefined ||
+      contextId === null
+    ) {
+      return;
+    }
+
+    if (
+      String(localId) !==
+      String(contextId)
+    ) {
+      return;
+    }
+
+    /*
+      Same property hai, isliye context ka latest
+      object use kar sakte hain.
+
+      Isse agar API/context data refresh hua hai,
+      latest details bhi aa jayengi.
+    */
+
+    if (
+      contextSelectedProperty &&
+      contextSelectedProperty !==
+        localSelectedProperty
+    ) {
+      setLocalSelectedProperty(
+        contextSelectedProperty,
+      );
+    }
+  }, [
+    contextSelectedProperty,
+    localSelectedProperty,
+  ]);
+
+  /* =====================================================
+     WIFI / ELECTRICITY DETAILS
   ===================================================== */
 
   const wifiHtml = useMemo(() => {
@@ -93,6 +254,17 @@ export default function WiFiDetailsScreen({
     const details =
       selectedProperty
         ?.internal_wifi_electricity_account_details;
+
+    console.log(
+      'WIFI FINAL PROPERTY:',
+      selectedProperty?.unit_id ??
+        selectedProperty?.id,
+    );
+
+    console.log(
+      'WIFI FINAL DETAILS:',
+      details,
+    );
 
     if (
       details === null ||
@@ -113,6 +285,87 @@ export default function WiFiDetailsScreen({
     selectedProperty?.final_unit_name ||
     selectedProperty?.name ||
     'Select Property';
+
+  /* =====================================================
+     PROPERTY CHANGE
+  ===================================================== */
+
+  const handlePropertyChange = (
+    _,
+    property,
+  ) => {
+    if (!property) {
+      return;
+    }
+
+    const newPropertyId =
+      property?.unit_id ??
+      property?.id;
+
+    const currentPropertyId =
+      selectedProperty?.unit_id ??
+      selectedProperty?.id;
+
+    /* ===================================================
+       SAME PROPERTY
+    =================================================== */
+
+    if (
+      String(newPropertyId) ===
+      String(currentPropertyId)
+    ) {
+      return;
+    }
+
+    console.log(
+      'WIFI PROPERTY CHANGING:',
+      property,
+    );
+
+    console.log(
+      'NEW PROPERTY ID:',
+      newPropertyId,
+    );
+
+    console.log(
+      'NEW WIFI DETAILS:',
+      property
+        ?.internal_wifi_electricity_account_details,
+    );
+
+    /* ===================================================
+       LOADER ON
+    =================================================== */
+
+    setIsChangingProperty(true);
+
+    /* ===================================================
+       MOST IMPORTANT FIX
+
+       Dropdown se jo actual property object aa raha hai,
+       wahi direct local selected property banega.
+
+       Isliye purana context object render nahi hoga.
+    =================================================== */
+
+    setLocalSelectedProperty(property);
+
+    /* ===================================================
+       CONTEXT BHI UPDATE
+    =================================================== */
+
+    handleUnitChange(property);
+
+    /* ===================================================
+       Loader ko next render ke baad hide karo.
+
+       Koi fixed 400ms API wait nahi.
+    =================================================== */
+
+    requestAnimationFrame(() => {
+      setIsChangingProperty(false);
+    });
+  };
 
   /* =====================================================
      HTML STYLES
@@ -169,6 +422,25 @@ export default function WiFiDetailsScreen({
   };
 
   /* =====================================================
+     LOADER
+  ===================================================== */
+
+  const renderLoader = () => {
+    return (
+      <View style={styles.loaderContainer}>
+        <ActivityIndicator
+          size="small"
+          color="#17B978"
+        />
+
+        <Text style={styles.loaderText}>
+          Loading property details...
+        </Text>
+      </View>
+    );
+  };
+
+  /* =====================================================
      MAIN UI
   ===================================================== */
 
@@ -195,34 +467,75 @@ export default function WiFiDetailsScreen({
             PROPERTY DROPDOWN
         ============================================= */}
 
-        {propertyList.length > 0 && (
+        {dropdownPropertyList.length > 0 && (
           <View
             style={styles.propertySelectorWrap}>
+            <Text style={styles.propertyLabel}>PROPERTY</Text>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.propertySelector}
+              onPress={() =>
+                setIsPropertyDropdownOpen(open => !open)
+              }>
+              <Text
+                numberOfLines={1}
+                style={styles.propertySelectorText}>
+                {selectedPropertyName}
+              </Text>
+              <Text style={styles.propertyChevron}>
+                {isPropertyDropdownOpen ? '⌃' : '⌄'}
+              </Text>
+            </TouchableOpacity>
 
-            <PropertyDropdown
-              selectedValue={
-                selectedProperty?.unit_id ??
-                selectedProperty?.id
-              }
+            {isPropertyDropdownOpen && (
+              <View style={styles.propertyDropdownMenu}>
+                <ScrollView
+                  nestedScrollEnabled
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                  style={styles.propertyDropdownOptions}>
+                  {dropdownPropertyList.map(property => {
+                    const propertyId =
+                      property?.unit_id ?? property?.id;
+                    const selectedId =
+                      selectedProperty?.unit_id ?? selectedProperty?.id;
+                    const isSelected =
+                      String(propertyId) === String(selectedId);
 
-              selectedLabel={
-                selectedPropertyName
-              }
-
-              fallbackProperties={
-                propertyList
-              }
-
-              onChange={(_, property) => {
-                console.log(
-                  'WIFI PROPERTY SELECTED:',
-                  property,
-                );
-
-                handleUnitChange(property);
-              }}
-            />
-
+                    return (
+                      <TouchableOpacity
+                        key={String(propertyId)}
+                        activeOpacity={0.8}
+                        style={[
+                          styles.propertyDropdownItem,
+                          isSelected && styles.propertyDropdownItemActive,
+                        ]}
+                        onPress={() => {
+                          setIsPropertyDropdownOpen(false);
+                          handlePropertyChange(
+                            property?.unit_name ||
+                              property?.final_unit_name ||
+                              property?.name,
+                            property,
+                          );
+                        }}>
+                        <Text
+                          style={[
+                            styles.propertyDropdownItemText,
+                            isSelected &&
+                              styles.propertyDropdownItemTextActive,
+                          ]}>
+                          {property?.unit_name ||
+                            property?.final_unit_name ||
+                            property?.name ||
+                            'Unnamed property'}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
           </View>
         )}
 
@@ -243,10 +556,14 @@ export default function WiFiDetailsScreen({
             ========================================= */}
 
             <View
-              style={styles.networkHeader}>
+              style={
+                styles.networkHeader
+              }>
 
               <Text
-                style={styles.networkName}>
+                style={
+                  styles.networkName
+                }>
                 Wifi/Electricity details
               </Text>
 
@@ -258,12 +575,14 @@ export default function WiFiDetailsScreen({
 
             <Text
               numberOfLines={2}
-              style={styles.selectedPropertyText}>
+              style={
+                styles.selectedPropertyText
+              }>
               {selectedPropertyName}
             </Text>
 
             {/* =========================================
-                API CONTENT
+                CONTENT / LOADER
             ========================================= */}
 
             <View
@@ -271,14 +590,18 @@ export default function WiFiDetailsScreen({
                 styles.editorContentWrap
               }>
 
-              {wifiHtml ? (
+              {isChangingProperty ? (
+                renderLoader()
+              ) : wifiHtml ? (
                 <RenderHtml
                   contentWidth={
                     width - 64
                   }
+
                   source={{
                     html: wifiHtml,
                   }}
+
                   tagsStyles={
                     tagsStyles
                   }
@@ -292,6 +615,7 @@ export default function WiFiDetailsScreen({
           </View>
 
         </ScrollView>
+
       </View>
     </SafeAreaView>
   );
@@ -311,134 +635,93 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-  },
-
-  backButton: {
-    padding: 8,
-  },
-
-  backText: {
-    fontSize: 28,
-    color: '#000',
-  },
-
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000',
-  },
-
-  placeholder: {
-    width: 40,
-  },
-
   propertySelectorWrap: {
     paddingHorizontal: 16,
     marginTop: 16,
     zIndex: 10,
+    elevation: 10,
   },
 
   propertyLabel: {
     fontSize: 12,
-    color: '#666',
-    fontWeight: '600',
-    marginBottom: 4,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+    color: '#82918A',
+    marginBottom: 7,
   },
 
   propertySelector: {
+    minHeight: 52,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#FFF',
-    padding: 12,
-    borderRadius: 8,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#D9E5DE',
+    backgroundColor: '#FFFFFF',
   },
 
-  propertyText: {
-    fontSize: 16,
-    color: '#000',
+  propertySelectorText: {
+    flex: 1,
+    marginRight: 12,
+    color: '#273B34',
+    fontSize: 14,
+    fontWeight: '700',
   },
 
   propertyChevron: {
-    fontSize: 16,
-    color: '#666',
+    color: '#17B978',
+    fontSize: 20,
+    fontWeight: '700',
   },
 
-  dropdownMenu: {
+  propertyDropdownMenu: {
     position: 'absolute',
-    top: 60,
+    top: 78,
     left: 16,
     right: 16,
-    backgroundColor: '#FFF',
-    borderRadius: 8,
+    maxHeight: 500,
+    paddingVertical: 6,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    elevation: 4,
-    zIndex: 50,
+    borderColor: '#D9E5DE',
+    backgroundColor: '#FFFFFF',
+    elevation: 12,
+    shadowColor: '#17251F',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
   },
 
-  dropdownItem: {
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+  propertyDropdownOptions: {
+    maxHeight: 480,
   },
 
-  dropdownItemActive: {
-    backgroundColor: '#F3F7F4',
+  propertyDropdownItem: {
+    minHeight: 48,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
 
-  dropdownItemText: {
-    fontSize: 16,
-    color: '#374151',
+  propertyDropdownItemActive: {
+    backgroundColor: '#EAF7F2',
   },
 
-  dropdownItemTextActive: {
-    color: '#000',
-    fontWeight: '600',
+  propertyDropdownItemText: {
+    color: '#50635B',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+
+  propertyDropdownItemTextActive: {
+    color: '#17B978',
+    fontWeight: '800',
   },
 
   content: {
     padding: 16,
-  },
-
-  heroCard: {
-    alignItems: 'center',
-    backgroundColor: '#FFF',
-    padding: 24,
-    borderRadius: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-
-  iconWrap: {
-    backgroundColor: '#F3F7F4',
-    padding: 16,
-    borderRadius: 50,
-    marginBottom: 12,
-  },
-
-  icon: {
-    fontSize: 32,
-  },
-
-  heroTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#000',
-    marginBottom: 4,
-  },
-
-  heroSubtitle: {
-    fontSize: 14,
-    color: '#666',
   },
 
   networkCard: {
@@ -468,29 +751,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#10B981',
-    marginRight: 6,
-  },
-
-  statusText: {
-    fontSize: 12,
-    color: '#047857',
-    fontWeight: '500',
-  },
-
   selectedPropertyText: {
     fontSize: 13,
     color: '#17B978',
@@ -500,7 +760,30 @@ const styles = StyleSheet.create({
 
   editorContentWrap: {
     paddingVertical: 4,
+    minHeight: 80,
   },
+
+  /* ================================================
+     LOADER
+  ================================================ */
+
+  loaderContainer: {
+    minHeight: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+  },
+
+  loaderText: {
+    marginTop: 10,
+    fontSize: 12,
+    color: '#777',
+    fontWeight: '500',
+  },
+
+  /* ================================================
+     EMPTY
+  ================================================ */
 
   emptyContainer: {
     paddingVertical: 18,
@@ -520,4 +803,4 @@ const styles = StyleSheet.create({
     color: '#777',
     textAlign: 'center',
   },
-});
+}); 

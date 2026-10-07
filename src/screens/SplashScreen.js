@@ -8,14 +8,13 @@ import {
   Easing,
   Dimensions,
 } from 'react-native';
-import LogoShape from '../assets/logo-shape.svg';
+import SplashscreenImg from '../assets/splashscreen_img.svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const {width, height} = Dimensions.get('window');
 
-const PRIMARY = '#17B978';
-const DARK = '#222222';
-const BACKGROUND = '#F9FCFA';
+const PRIMARY = '#07996F';
+const BACKGROUND = '#07996F';
 
 const SplashScreen = ({navigation}) => {
   const fadeAnim = useRef(
@@ -24,10 +23,6 @@ const SplashScreen = ({navigation}) => {
 
   const scaleAnim = useRef(
     new Animated.Value(0.85),
-  ).current;
-
-  const loadingAnim = useRef(
-    new Animated.Value(0),
   ).current;
 
   useEffect(() => {
@@ -52,30 +47,16 @@ const SplashScreen = ({navigation}) => {
     contentAnimation.start();
 
 
-    const loadingLoop = Animated.loop(
-      Animated.timing(loadingAnim, {
-        toValue: 1,
-        duration: 1000,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    );
-
-    loadingLoop.start();
-
-
     checkLogin();
 
 
     return () => {
-      loadingLoop.stop();
       contentAnimation.stop();
     };
   }, [
     navigation,
     fadeAnim,
     scaleAnim,
-    loadingAnim,
   ]);
 
 
@@ -161,6 +142,10 @@ const SplashScreen = ({navigation}) => {
         '================================',
       );
 
+      await new Promise(resolve =>
+        setTimeout(resolve, 1600),
+      );
+
       if (token) {
         console.log(
           'SPLASH: USER ALREADY LOGGED IN',
@@ -210,19 +195,10 @@ const SplashScreen = ({navigation}) => {
     }
   };
 
-  const rotate =
-    loadingAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [
-        '0deg',
-        '360deg',
-      ],
-    });
-
   return (
     <View style={styles.container}>
       <StatusBar
-        barStyle="dark-content"
+        barStyle="light-content"
         backgroundColor={
           BACKGROUND
         }
@@ -275,10 +251,10 @@ const SplashScreen = ({navigation}) => {
               );
             }}
           /> */}
-          <LogoShape
-  width={125}
-  height={125}
-/>
+          <SplashscreenImg
+            width={width * 0.94}
+            height={width * 0.94 * (798 / 851)}
+          />
         </View>
 
         {/* =================================================
@@ -293,14 +269,14 @@ const SplashScreen = ({navigation}) => {
             style={
               styles.stayText
             }>
-            Stay
+            Housekeeping
           </Text>
 
           <Text
             style={
               styles.serenoText
             }>
-            Sereno
+            Heroes
           </Text>
         </View>
 
@@ -322,14 +298,14 @@ const SplashScreen = ({navigation}) => {
           style={
             styles.staffText
           }>
-          MAINTENANCE APP
+          A <Text style={styles.productBrand}>StaySereno</Text> PRODUCT
         </Text>
 
         {/* =================================================
             ACCENT
         ================================================= */}
 
-        <View
+        {/* <View
           style={
             styles.accentWrapper
           }>
@@ -350,12 +326,12 @@ const SplashScreen = ({navigation}) => {
               styles.accentLine
             }
           />
-        </View>
+        </View> */}
       </Animated.View>
 
-      {/* =================================================
-          BOTTOM ILLUSTRATION
-      ================================================= */}
+        {/* =================================================
+          BACKGROUND WAVES
+        ================================================= */}
 
       <View
         style={
@@ -639,35 +615,6 @@ const SplashScreen = ({navigation}) => {
           />
         </View>
 
-        {/* =================================================
-            LOADING
-        ================================================= */}
-
-        <View
-          style={
-            styles.loadingContainer
-          }>
-
-          <Animated.View
-            style={[
-              styles.loader,
-              {
-                transform: [
-                  {
-                    rotate,
-                  },
-                ],
-              },
-            ]}
-          />
-
-          <Text
-            style={
-              styles.loadingText
-            }>
-            Loading...
-          </Text>
-        </View>
       </View>
     </View>
   );
@@ -703,7 +650,7 @@ const styles = StyleSheet.create({
     borderRadius: width,
 
     backgroundColor:
-      '#F1F8F4',
+      'rgba(255,255,255,0.035)',
   },
 
   content: {
@@ -713,76 +660,79 @@ const styles = StyleSheet.create({
 
     justifyContent: 'center',
 
-    paddingBottom:
-      height * 0.16,
+    paddingBottom: 0,
 
     zIndex: 10,
   },
 
   logoWrapper: {
-    width: 135,
+    width: '100%',
 
-    height: 125,
+    height: height * 0.44,
 
     alignItems: 'center',
 
     justifyContent: 'center',
 
-    marginBottom: 5,
+    marginBottom: 15,
   },
 
   brandRow: {
-    flexDirection: 'row',
+    flexDirection: 'column',
 
     alignItems: 'center',
   },
 
   stayText: {
-    fontSize: 46,
+    fontSize: 38,
 
-    lineHeight: 55,
-
-    fontWeight: '700',
-
-    color: DARK,
-
-    letterSpacing: -2,
-  },
-
-  serenoText: {
-    fontSize: 46,
-
-    lineHeight: 55,
+    lineHeight: 46,
 
     fontWeight: '800',
 
-    color: PRIMARY,
+    color: '#FFFFFF',
 
-    letterSpacing: -2,
+    letterSpacing: 0,
+  },
+
+  serenoText: {
+    fontSize: 38,
+
+    lineHeight: 46,
+
+    fontWeight: '800',
+
+    color: '#9BE7CB',
+
+    letterSpacing: 0,
   },
 
   divider: {
-    width: 70,
+    width: '64%',
 
-    height: 3,
+    height: 1,
 
     borderRadius: 10,
 
-    backgroundColor: PRIMARY,
+    backgroundColor: 'rgba(255,255,255,0.45)',
 
-    marginTop: 18,
+    marginTop: 22,
 
-    marginBottom: 15,
+    marginBottom: 25,
   },
 
   staffText: {
-    fontSize: 14,
+    fontSize: 15,
 
-    fontWeight: '600',
+    fontWeight: '500',
 
-    letterSpacing: 3,
+    letterSpacing: 0.5,
 
-    color: DARK,
+    color: '#FFFFFF',
+  },
+
+  productBrand: {
+    fontWeight: '800',
   },
 
   accentWrapper: {
@@ -825,7 +775,7 @@ const styles = StyleSheet.create({
 
     right: 0,
 
-    height: height * 0.31,
+    height: height * 0.15,
 
     overflow: 'hidden',
   },
@@ -848,7 +798,7 @@ const styles = StyleSheet.create({
     justifyContent:
       'space-around',
 
-    opacity: 0.35,
+    display: 'none',
   },
 
   building: {
@@ -968,6 +918,8 @@ const styles = StyleSheet.create({
 
     bottom: 73,
 
+    display: 'none',
+
     alignItems: 'center',
   },
 
@@ -1036,6 +988,8 @@ const styles = StyleSheet.create({
     right: 0,
 
     alignItems: 'center',
+
+    display: 'none',
   },
 
   loader: {

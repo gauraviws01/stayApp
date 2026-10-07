@@ -9,6 +9,7 @@ import {
   Text,
   StyleSheet,
   StatusBar,
+  Modal,
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
@@ -16,6 +17,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import PageHeader from '../components/PageHeader';
+import DashboardBookingDetail from './DashboardDetail';
 
 const PRIMARY = '#17B978';
 const DARK = '#222222';
@@ -24,8 +26,102 @@ const BACKGROUND = '#F3F4F8';
 const API_URL =
   'https://staysereno.in/api/staff/services/maintenance';
 
+const BOOKING_DETAIL_API =
+  'https://staysereno.in/api/staff/booking/detail';
+
 const STORAGE_URL =
   'https://staysereno.in/storage/';
+
+const parseAmount = value => {
+  if (value === undefined || value === null || value === '') {
+    return 0;
+  }
+
+  const amount = Number(String(value).replace(/[^0-9.-]/g, ''));
+  return Number.isNaN(amount) ? 0 : amount;
+};
+
+const formatAmount = value =>
+  new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(parseAmount(value));
+
+const isPresent = value =>
+  value !== undefined && value !== null && value !== '';
+
+const parseChargeArray = value => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    try {
+      return parseChargeArray(JSON.parse(value));
+    } catch (error) {
+      return [];
+    }
+  }
+
+  if (value && typeof value === 'object') {
+    const nestedLists = [
+      value.detail_new_additional_charges,
+      value.additional_charges,
+      value.charges,
+      value.items,
+      value.data,
+    ];
+
+    for (const nestedList of nestedLists) {
+      const parsed = parseChargeArray(nestedList);
+
+      if (parsed.length > 0) {
+        return parsed;
+      }
+    }
+  }
+
+  return [];
+};
+
+const getChargeLabel = (charge, index) =>
+  typeof charge === 'string'
+    ? charge
+    : charge?.name ||
+      charge?.title ||
+      charge?.label ||
+      charge?.charge_name ||
+      charge?.additional_charge_name ||
+      charge?.description ||
+      `Additional charge ${index + 1}`;
+
+const getChargeAmount = charge =>
+  typeof charge === 'number'
+    ? charge
+    : charge?.amount ??
+      charge?.charge_amount ??
+      charge?.additional_charge_amount ??
+      charge?.price ??
+      charge?.total ??
+      charge?.value;
+
+const parseDiscountDetails = value => {
+  if (value && typeof value === 'object') {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  return null;
+};
 
 /* =====================================================
    HELPERS
@@ -325,6 +421,33 @@ const BookingDetail = ({
   const property =
     route?.params?.property || {};
 
+  const selectedDate =
+    route?.params?.selectedDate ??
+    booking?.selectedDate;
+
+  const today = new Date();
+  const todayDateKey =
+    `${today.getFullYear()}-${String(
+      today.getMonth() + 1,
+    ).padStart(2, '0')}-${String(
+      today.getDate(),
+    ).padStart(2, '0')}`;
+
+  const selectedDateKey =
+    selectedDate instanceof Date
+      ? `${selectedDate.getFullYear()}-${String(
+          selectedDate.getMonth() + 1,
+        ).padStart(2, '0')}-${String(
+          selectedDate.getDate(),
+        ).padStart(2, '0')}`
+      : String(selectedDate || '').slice(0, 10);
+
+  const isPastDatePreview =
+    Boolean(
+      selectedDateKey &&
+      selectedDateKey < todayDateKey,
+    );
+
   const [
     workProgressList,
     setWorkProgressList,
@@ -334,6 +457,180 @@ const BookingDetail = ({
     workProgressLoading,
     setWorkProgressLoading,
   ] = useState(false);
+
+  const [
+    dashboardDetailsVisible,
+    setDashboardDetailsVisible,
+  ] = useState(false);
+
+  const [
+    dashboardDetailsLoading,
+    setDashboardDetailsLoading,
+  ] = useState(false);
+
+  const [
+    dashboardDetailsError,
+    setDashboardDetailsError,
+  ] = useState('');
+
+  const [
+    dashboardBooking,
+    setDashboardBooking,
+  ] = useState(null);
+
+  const openDashboardDetails = async (openSheet = true) => {
+    const bookingId =
+      booking?.booking_id ??
+      booking?.bookingId ??
+      booking?.id;
+
+    if (openSheet) {
+      setDashboardDetailsVisible(true);
+      setDashboardDetailsError('');
+    }
+
+    if (dashboardBooking || dashboardDetailsLoading) {
+      return;
+    }
+
+    setDashboardDetailsLoading(true);
+
+    try {
+      if (
+        bookingId === undefined ||
+        bookingId === null ||
+        String(bookingId).trim() === ''
+      ) {
+        throw new Error('Booking ID is not available.');
+      }
+
+      const token =
+        (await AsyncStorage.getItem('token')) ||
+        (await AsyncStorage.getItem('access_token')) ||
+        (await AsyncStorage.getItem('authToken')) ||
+        (await AsyncStorage.getItem('userToken'));
+
+      if (!token) {
+        throw new Error('Authentication token not found. Please login again.');
+      }
+
+      const response = await fetch(
+        `${BOOKING_DETAIL_API}/${encodeURIComponent(
+          String(bookingId),
+        )}`,
+        {
+          method: 'GET',
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      const responseText = await response.text();
+      let result;
+
+      try {
+        result = JSON.parse(responseText);
+      } catch (error) {
+        throw new Error('Invalid booking detail response.');
+      }
+
+      if (!response.ok || result?.status === false) {
+        throw new Error(
+          result?.message ||
+            result?.error ||
+            'Unable to load booking details.',
+        );
+      }
+
+      const detail =
+        result?.data?.bookingDetail ||
+        result?.data?.booking_detail ||
+        result?.data?.booking ||
+        result?.bookingDetail ||
+        result?.booking_detail ||
+        result?.booking ||
+        result?.data ||
+        result;
+
+      console.log(
+        'BOOKING DETAIL ADDITIONAL CHARGES RAW:',
+        detail?.detail_new_additional_charges,
+      );
+
+      console.log(
+        'BOOKING DETAIL ADDITIONAL CHARGE COUNT:',
+        parseChargeArray(
+          detail?.detail_new_additional_charges,
+        ).length,
+      );
+
+      if (
+        !detail ||
+        typeof detail !== 'object' ||
+        Array.isArray(detail)
+      ) {
+        throw new Error('Booking details were not found.');
+      }
+
+      const resolvedProperty =
+        detail?.property ||
+        detail?.propertyData ||
+        detail?.propertyObject ||
+        property;
+
+      setDashboardBooking({
+        ...booking,
+        ...detail,
+        id:
+          detail?.id ||
+          detail?.booking_id ||
+          detail?.bookingId ||
+          bookingId,
+        bookingId:
+          detail?.bookingId ||
+          detail?.booking_id ||
+          bookingId,
+        booking_id:
+          detail?.booking_id ||
+          detail?.bookingId ||
+          bookingId,
+        property: resolvedProperty,
+        propertyData: resolvedProperty,
+        propertyObject: resolvedProperty,
+        tags:
+          detail?.tags ||
+          booking?.tags ||
+          resolvedProperty?.tags ||
+          [],
+      });
+    } catch (error) {
+      setDashboardDetailsError(
+        error?.message || 'Unable to load booking details.',
+      );
+    } finally {
+      setDashboardDetailsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const bookingId =
+      booking?.booking_id ??
+      booking?.bookingId ??
+      booking?.id;
+
+    if (
+      bookingId === undefined ||
+      bookingId === null ||
+      String(bookingId).trim() === '' ||
+      String(bookingId).startsWith('blocked-')
+    ) {
+      return;
+    }
+
+    openDashboardDetails(false);
+  }, []);
 
   /* ===================================================
      CURRENT BOOKING ID
@@ -1487,6 +1784,109 @@ const BookingDetail = ({
     booking?.propertyName ||
     'Unknown Property';
 
+  const priceBooking =
+    dashboardBooking || {};
+
+  const basePriceRaw =
+    priceBooking?.base_price ??
+    priceBooking?.basePrice;
+
+  const updatedBasePriceRaw =
+    priceBooking?.detail_updated_base_price;
+
+  const extraGuestChargeRaw =
+    priceBooking?.extra_guest_charge;
+
+  const additionalCharges =
+    parseChargeArray(
+      priceBooking?.detail_new_additional_charges,
+    );
+
+  const discountDetails =
+    parseDiscountDetails(
+      priceBooking?.detail_discount_amount,
+    );
+
+  const discountAmountRaw =
+    discountDetails?.amount;
+
+  const discountCouponCode =
+    discountDetails?.coupon_code ||
+    priceBooking?.applied_discount_coupon;
+
+  const appliedCreditRaw =
+    priceBooking?.apply_credit_amount;
+
+  const convenienceFeeRaw =
+    priceBooking?.convenience_fee;
+
+  const convenienceTaxRaw =
+    priceBooking?.convenience_tax;
+
+  const totalBeforeTaxRaw =
+    priceBooking?.totalbeforetax;
+
+  const showConvenienceFee =
+    parseAmount(convenienceFeeRaw) > 0;
+
+  const taxAmountRaw =
+    priceBooking?.tax_amount ??
+    priceBooking?.tax;
+
+  const guestTotalRaw =
+    priceBooking?.guest_total_payable_amount;
+
+  const paidAmountRaw =
+    priceBooking?.detail_paid_amount;
+
+  const pendingAmountRaw =
+    priceBooking?.detail_pending_amount;
+
+  const isQuotationChannel =
+    String(
+      priceBooking?.channel ??
+        priceBooking?.channel_name ??
+        booking?.channel ??
+        booking?.channel_name ??
+        '',
+    )
+      .trim()
+      .toLowerCase() === 'quotation';
+
+  const quotationSubtotalRaw =
+    priceBooking?.detail_sub_total ??
+    booking?.detail_sub_total;
+
+  const quotationAddOnDiscountRaw =
+    priceBooking?.detail_add_on_discount ??
+    booking?.detail_add_on_discount;
+
+  const quotationTotalRaw =
+    priceBooking?.detail_total_amount ??
+    booking?.detail_total_amount;
+
+  const hasQuotationPriceDetails =
+    [
+      quotationSubtotalRaw,
+      quotationAddOnDiscountRaw,
+      quotationTotalRaw,
+    ].some(isPresent);
+
+  const hasPriceBreakdown =
+    [
+      basePriceRaw,
+      updatedBasePriceRaw,
+      extraGuestChargeRaw,
+      discountAmountRaw,
+      appliedCreditRaw,
+      taxAmountRaw,
+      guestTotalRaw,
+      paidAmountRaw,
+      pendingAmountRaw,
+    ].some(isPresent) ||
+    additionalCharges.length > 0 ||
+    showConvenienceFee;
+
   /* ===================================================
      BOOKING DATES
 
@@ -1650,6 +2050,18 @@ const BookingDetail = ({
         contentContainerStyle={
           styles.content
         }>
+
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={openDashboardDetails}
+          style={styles.dashboardDetailsButton}>
+          <Text style={styles.dashboardDetailsButtonText}>
+            View full booking details
+          </Text>
+          <Text style={styles.dashboardDetailsButtonArrow}>
+            ›
+          </Text>
+        </TouchableOpacity>
 
         {/* PROPERTY */}
 
@@ -1822,6 +2234,187 @@ const BookingDetail = ({
           />
         </View>
 
+        {/* {hasPriceBreakdown && (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>
+              Price Breakdown
+            </Text>
+            <View style={styles.divider} />
+
+            {isPresent(basePriceRaw) && (
+              <View style={styles.priceBreakdownRow}>
+                <Text style={styles.priceBreakdownLabel}>Base price</Text>
+                <Text style={styles.priceBreakdownValue}>
+                  {formatAmount(basePriceRaw)}
+                </Text>
+              </View>
+            )}
+
+            {isPresent(updatedBasePriceRaw) && (
+              <View style={styles.priceBreakdownRow}>
+                <Text style={styles.priceBreakdownLabel}>
+                  Updated base price
+                </Text>
+                <Text style={styles.priceBreakdownValue}>
+                  {formatAmount(updatedBasePriceRaw)}
+                </Text>
+              </View>
+            )}
+
+            {isPresent(extraGuestChargeRaw) && (
+              <View style={styles.priceBreakdownRow}>
+                <Text style={styles.priceBreakdownLabel}>
+                  Extra guest charge
+                </Text>
+                <Text style={styles.priceBreakdownValue}>
+                  {formatAmount(extraGuestChargeRaw)}
+                </Text>
+              </View>
+            )}
+
+            {additionalCharges.map((charge, index) => {
+              const amount = getChargeAmount(charge);
+
+              return (
+                <View
+                  key={
+                    charge?.id ??
+                    charge?.additional_charge_id ??
+                    `${index}-${getChargeLabel(charge, index)}`
+                  }
+                  style={styles.priceBreakdownRow}>
+                  <Text style={styles.priceBreakdownLabel}>
+                    {getChargeLabel(charge, index)}
+                  </Text>
+                  {isPresent(amount) && (
+                    <Text style={styles.priceBreakdownValue}>
+                      {formatAmount(amount)}
+                    </Text>
+                  )}
+                </View>
+              );
+            })}
+
+            {showConvenienceFee && (
+              <>
+                <View style={styles.priceBreakdownRow}>
+                  <Text style={styles.priceBreakdownLabel}>
+                    Convenience Fee {convenienceTaxRaw ?? ''}%
+                  </Text>
+                  <Text style={styles.priceBreakdownValue}>
+                    {formatAmount(convenienceFeeRaw)}
+                  </Text>
+                </View>
+
+                {isPresent(totalBeforeTaxRaw) && (
+                  <View style={styles.priceBreakdownRow}>
+                    <Text style={styles.priceBreakdownLabel}>Total</Text>
+                    <Text style={styles.priceBreakdownValue}>
+                      {formatAmount(totalBeforeTaxRaw)}
+                    </Text>
+                  </View>
+                )}
+              </>
+            )}
+
+            {isPresent(discountAmountRaw) && (
+              <View style={styles.priceBreakdownRow}>
+                <Text style={styles.priceBreakdownLabel}>
+                  {discountCouponCode
+                    ? `Discount (${discountCouponCode})`
+                    : 'Discount'}
+                </Text>
+                <Text style={styles.priceBreakdownValue}>
+                  {formatAmount(-Math.abs(parseAmount(discountAmountRaw)))}
+                </Text>
+              </View>
+            )}
+
+            {isPresent(appliedCreditRaw) && (
+              <View style={styles.priceBreakdownRow}>
+                <Text style={styles.priceBreakdownLabel}>
+                  Applied credit
+                </Text>
+                <Text style={styles.priceBreakdownValue}>
+                  {formatAmount(-Math.abs(parseAmount(appliedCreditRaw)))}
+                </Text>
+              </View>
+            )}
+
+            {isPresent(taxAmountRaw) && (
+              <View style={styles.priceBreakdownRow}>
+                <Text style={styles.priceBreakdownLabel}>GST Amount</Text>
+                <Text style={styles.priceBreakdownValue}>
+                  {formatAmount(taxAmountRaw)}
+                </Text>
+              </View>
+            )}
+
+            {isPresent(guestTotalRaw) && (
+              <View style={[styles.priceBreakdownRow, styles.priceBreakdownTotalRow]}>
+                <Text style={styles.priceBreakdownTotalLabel}>Guest Total</Text>
+                <Text style={styles.priceBreakdownTotalValue}>
+                  {formatAmount(guestTotalRaw)}
+                </Text>
+              </View>
+            )}
+
+            {isPresent(paidAmountRaw) && (
+              <View style={styles.priceBreakdownRow}>
+                <Text style={styles.priceBreakdownLabel}>Paid</Text>
+                <Text style={styles.priceBreakdownPaidValue}>
+                  {formatAmount(paidAmountRaw)}
+                </Text>
+              </View>
+            )}
+
+            {isPresent(pendingAmountRaw) && (
+              <View style={[styles.priceBreakdownRow, styles.lastPriceBreakdownRow]}>
+                <Text style={styles.priceBreakdownLabel}>Pending</Text>
+                <Text style={styles.priceBreakdownPendingValue}>
+                  {formatAmount(pendingAmountRaw)}
+                </Text>
+              </View>
+            )}
+          </View>
+        )} */}
+
+        {isQuotationChannel && hasQuotationPriceDetails && (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>
+              Quotation Price Details
+            </Text>
+            <View style={styles.divider} />
+
+            {isPresent(quotationSubtotalRaw) && (
+              <View style={styles.priceBreakdownRow}>
+                <Text style={styles.priceBreakdownLabel}>Sub Total</Text>
+                <Text style={styles.priceBreakdownValue}>
+                  {formatAmount(quotationSubtotalRaw)}
+                </Text>
+              </View>
+            )}
+
+            {isPresent(quotationAddOnDiscountRaw) && (
+              <View style={styles.priceBreakdownRow}>
+                <Text style={styles.priceBreakdownLabel}>Add-on Discount</Text>
+                <Text style={styles.priceBreakdownValue}>
+                  {formatAmount(-Math.abs(parseAmount(quotationAddOnDiscountRaw)))}
+                </Text>
+              </View>
+            )}
+
+            {isPresent(quotationTotalRaw) && (
+              <View style={[styles.priceBreakdownRow, styles.priceBreakdownTotalRow]}>
+                <Text style={styles.priceBreakdownTotalLabel}>Total Amount</Text>
+                <Text style={styles.priceBreakdownTotalValue}>
+                  {formatAmount(quotationTotalRaw)}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
         {/* STATUS */}
 
         <View
@@ -1864,36 +2457,30 @@ const BookingDetail = ({
           </View>
         </View>
 
-         {/* UPDATE WORK PROGRESS */}
+        {/* UPDATE WORK PROGRESS */}
 
-        <TouchableOpacity
-          activeOpacity={0.85}
-          style={
-            styles.updateButton
-          }
-          onPress={() =>
-            navigation.navigate(
-              'UpdateWorkProgress',
-              {
-                booking,
-                property,
-              },
-            )
-          }>
-          <Text
-            style={
-              styles.updateButtonText
+        {!isPastDatePreview && (
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={styles.updateButton}
+            onPress={() =>
+              navigation.navigate(
+                'UpdateWorkProgress',
+                {
+                  booking,
+                  property,
+                },
+              )
             }>
-            Update Work Progress
-          </Text>
+            <Text style={styles.updateButtonText}>
+              Update Work Progress
+            </Text>
 
-          <Text
-            style={
-              styles.updateButtonArrow
-            }>
-            ›
-          </Text>
-        </TouchableOpacity>
+            <Text style={styles.updateButtonArrow}>
+              ›
+            </Text>
+          </TouchableOpacity>
+        )}
 
         {/* WORK PROGRESS */}
 
@@ -2093,6 +2680,66 @@ const BookingDetail = ({
 
        
       </ScrollView>
+
+      <Modal
+        visible={dashboardDetailsVisible}
+        transparent
+        animationType="slide"
+        statusBarTranslucent
+        onRequestClose={() =>
+          setDashboardDetailsVisible(false)
+        }>
+        <View style={styles.dashboardDetailsModalRoot}>
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={() =>
+              setDashboardDetailsVisible(false)
+            }
+            style={StyleSheet.absoluteFillObject}
+          />
+
+          <View style={styles.dashboardDetailsSheet}>
+            <View style={styles.dashboardDetailsHandle} />
+
+            {dashboardDetailsLoading ? (
+              <View style={styles.dashboardDetailsMessage}>
+                <Text style={styles.dashboardDetailsMessageText}>
+                  Loading booking details...
+                </Text>
+              </View>
+            ) : dashboardDetailsError ? (
+              <View style={styles.dashboardDetailsMessage}>
+                <Text style={styles.dashboardDetailsErrorText}>
+                  {dashboardDetailsError}
+                </Text>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() =>
+                    setDashboardDetailsVisible(false)
+                  }
+                  style={styles.dashboardDetailsCloseButton}>
+                  <Text style={styles.dashboardDetailsCloseText}>
+                    Close
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : dashboardBooking ? (
+              <DashboardBookingDetail
+                navigation={navigation}
+                embedded
+                onClose={() =>
+                  setDashboardDetailsVisible(false)
+                }
+                route={{
+                  params: {
+                    booking: dashboardBooking,
+                  },
+                }}
+              />
+            ) : null}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -2112,7 +2759,90 @@ const styles = StyleSheet.create({
 
   content: {
     padding: 16,
-    paddingBottom: 30,
+    paddingBottom: 62,
+  },
+
+  dashboardDetailsButton: {
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    marginBottom: 14,
+    borderRadius: 10,
+    backgroundColor: PRIMARY,
+  },
+
+  dashboardDetailsButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  dashboardDetailsButtonArrow: {
+    color: '#FFFFFF',
+    fontSize: 26,
+    lineHeight: 28,
+  },
+
+  dashboardDetailsModalRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.38)',
+  },
+
+  dashboardDetailsSheet: {
+    height: '92%',
+    overflow: 'hidden',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    backgroundColor: '#F6F8F7',
+  },
+
+  dashboardDetailsHandle: {
+    position: 'absolute',
+    top: 8,
+    alignSelf: 'center',
+    zIndex: 5,
+    width: 42,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#AAB8B2',
+  },
+
+  dashboardDetailsMessage: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+
+  dashboardDetailsMessageText: {
+    color: DARK,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+
+  dashboardDetailsErrorText: {
+    color: DARK,
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+
+  dashboardDetailsCloseButton: {
+    minWidth: 110,
+    minHeight: 44,
+    marginTop: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: PRIMARY,
+  },
+
+  dashboardDetailsCloseText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
   },
 
   card: {
@@ -2140,6 +2870,63 @@ const styles = StyleSheet.create({
     textTransform:
       'uppercase',
     letterSpacing: 0.8,
+  },
+
+  priceBreakdownRow: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF2F0',
+  },
+
+  priceBreakdownLabel: {
+    flex: 1,
+    marginRight: 12,
+    color: '#75837D',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  priceBreakdownValue: {
+    color: DARK,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  priceBreakdownTotalRow: {
+    borderBottomWidth: 0,
+  },
+
+  priceBreakdownTotalLabel: {
+    flex: 1,
+    color: DARK,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  priceBreakdownTotalValue: {
+    color: DARK,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  priceBreakdownPaidValue: {
+    color: PRIMARY,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  priceBreakdownPendingValue: {
+    color: '#D7685B',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  lastPriceBreakdownRow: {
+    borderBottomWidth: 0,
   },
 
   propertyName: {

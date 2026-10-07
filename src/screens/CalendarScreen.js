@@ -47,8 +47,6 @@ const BORDER = '#DDDDDD';
 const BOOKING_API =
   'https://staysereno.in/api/staff/booking';
 
-
-
 const DAYS = [
   'Sun',
   'Mon',
@@ -528,11 +526,53 @@ const CalendarScreen = ({navigation}) => {
         error?.message !==
         'Authentication token not found. Please login again.'
       ) {
-        Alert.alert(
-          'Booking Error',
-          error?.message ||
-            'Unable to load booking data.',
-        );
+        if (
+          error?.message ===
+          'Session expired. Please login again.'
+        ) {
+          Alert.alert(
+            'Session expired',
+            'Please login again.',
+            [
+              {
+                text: 'OK',
+                onPress: async () => {
+                  try {
+                    await AsyncStorage.multiRemove([
+                      'authToken',
+                      'token',
+                      'access_token',
+                      'userToken',
+                    ]);
+                  } catch (storageError) {
+                    console.log(
+                      'CLEAR TOKEN ERROR:',
+                      storageError,
+                    );
+                  }
+
+                  navigation.reset({
+                    index: 0,
+                    routes: [
+                      {
+                        name: 'Login',
+                      },
+                    ],
+                  });
+                },
+              },
+            ],
+            {
+              cancelable: false,
+            },
+          );
+        } else {
+          Alert.alert(
+            'Booking Error',
+            error?.message ||
+              'Unable to load booking data.',
+          );
+        }
       }
     } finally {
       setLoading(false);
@@ -1142,19 +1182,15 @@ const CalendarScreen = ({navigation}) => {
             return;
           }
 
-          const isStart =
-            date ===
-            booking.startDate;
-
-          const isEnd =
-            date ===
-            booking.endDate;
-
           segments.push({
             date,
             index,
-            isStart,
-            isEnd,
+            isStart:
+              date ===
+              booking.startDate,
+            isEnd:
+              date ===
+              booking.endDate,
           });
         },
       );
@@ -1170,46 +1206,47 @@ const CalendarScreen = ({navigation}) => {
     booking,
     selectedDate,
   ) => {
-    console.log(
-      'OPEN BOOKING:',
-      booking,
-    );
+    const originalBooking =
+      booking?.originalData || {};
+    const bookingId =
+      originalBooking?.booking_id ??
+      originalBooking?.bookingId ??
+      booking?.booking_id ??
+      booking?.bookingId ??
+      originalBooking?.id ??
+      booking?.id;
 
-    navigation.navigate(
-      'BookingDetail',
-      {
-        booking: {
-          ...booking,
-
-          selectedDate,
-
-          /* ==============================
-             EXPLICIT TIME
-          ============================== */
-
-          checkin_time:
-            booking?.checkin_time ||
-            '',
-
-          checkout_time:
-            booking?.checkout_time ||
-            '',
-
-          checkInTime:
-            booking?.checkInTime ||
-            booking?.checkin_time ||
-            '',
-
-          checkOutTime:
-            booking?.checkOutTime ||
-            booking?.checkout_time ||
-            '',
-        },
-
-        property:
-          selectedUnit,
+    navigation.navigate('BookingDetail', {
+      booking: {
+        ...originalBooking,
+        ...booking,
+        id: bookingId,
+        bookingId,
+        booking_id: bookingId,
+        selectedDate,
+        checkin_time:
+          booking?.checkin_time ||
+          originalBooking?.checkin_time ||
+          '',
+        checkout_time:
+          booking?.checkout_time ||
+          originalBooking?.checkout_time ||
+          '',
+        checkInTime:
+          booking?.checkInTime ||
+          booking?.checkin_time ||
+          originalBooking?.checkin_time ||
+          '',
+        checkOutTime:
+          booking?.checkOutTime ||
+          booking?.checkout_time ||
+          originalBooking?.checkout_time ||
+          '',
       },
-    );
+      property:
+        originalBooking?.property ||
+        selectedUnit,
+    });
   };
 
   /* ===================================================
@@ -1531,51 +1568,27 @@ const CalendarScreen = ({navigation}) => {
                               let segmentWidth =
                                 cellWidth;
 
-                              /* =================================
-                                 CHECK-IN
-                              ================================= */
-
                               if (
                                 segment.isStart &&
                                 !segment.isEnd
                               ) {
-                                left +=
-                                  cellWidth /
-                                  2;
-
-                                segmentWidth =
-                                  cellWidth /
-                                  2;
+                                left += cellWidth / 2;
+                                segmentWidth = cellWidth / 2;
                               }
-
-                              /* =================================
-                                 CHECKOUT
-                              ================================= */
 
                               if (
                                 segment.isEnd &&
                                 !segment.isStart
                               ) {
-                                segmentWidth =
-                                  cellWidth /
-                                  2;
+                                segmentWidth = cellWidth / 2;
                               }
-
-                              /* =================================
-                                 SAME DAY
-                              ================================= */
 
                               if (
                                 segment.isStart &&
                                 segment.isEnd
                               ) {
-                                left +=
-                                  cellWidth /
-                                  4;
-
-                                segmentWidth =
-                                  cellWidth /
-                                  2;
+                                left += cellWidth / 4;
+                                segmentWidth = cellWidth / 2;
                               }
 
                               return (
@@ -1778,6 +1791,7 @@ const CalendarScreen = ({navigation}) => {
           </View>
         </ScrollView>
       </View>
+
     </View>
   );
 };

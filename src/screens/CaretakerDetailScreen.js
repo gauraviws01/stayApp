@@ -7,15 +7,17 @@ import {
   ScrollView,
   StatusBar,
   SafeAreaView,
+  TouchableOpacity,
   useWindowDimensions,
 } from 'react-native';
 
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import RenderHtml from 'react-native-render-html';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import PropertyDropdown from '../components/PropertyDropdown';
 import {useProperty} from '../components/PropertyContext';
 import PageHeader from '../components/PageHeader';
+import {mergePropertyOptions} from '../utils/propertyOptions';
 
 const CaretakerDetailScreen = ({
   navigation,
@@ -29,6 +31,9 @@ const CaretakerDetailScreen = ({
     handleUnitChange,
   } = useProperty();
 
+  const [isPropertyDropdownOpen, setIsPropertyDropdownOpen] =
+    React.useState(false);
+
   /* =====================================================
      PROPERTY LIST
      
@@ -39,6 +44,53 @@ const CaretakerDetailScreen = ({
   const propertyList = Array.isArray(units)
     ? units
     : [];
+
+  const [storedProperties, setStoredProperties] =
+    React.useState([]);
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    const loadStoredProperties = async () => {
+      try {
+        const stored = await AsyncStorage.getItem('properties');
+        const parsed = stored ? JSON.parse(stored) : [];
+
+        if (mounted) {
+          setStoredProperties(
+            Array.isArray(parsed) ? parsed : [],
+          );
+        }
+      } catch (error) {
+        console.log('CARETAKER STORED PROPERTIES ERROR:', error);
+      }
+    };
+
+    loadStoredProperties();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const dropdownPropertyList = useMemo(
+    () => mergePropertyOptions(storedProperties, propertyList),
+    [storedProperties, propertyList],
+  );
+
+  React.useEffect(() => {
+    console.log(
+      'CARETAKER DROPDOWN OPTION COUNT:',
+      dropdownPropertyList.length,
+    );
+    console.log(
+      'CARETAKER DROPDOWN OPTIONS:',
+      dropdownPropertyList.map(property => ({
+        id: property.unit_id,
+        name: property.unit_name,
+      })),
+    );
+  }, [dropdownPropertyList]);
 
   /* =====================================================
      SELECTED PROPERTY
@@ -204,36 +256,76 @@ const CaretakerDetailScreen = ({
             PROPERTY DROPDOWN
         ============================================= */}
 
-        {propertyList.length > 0 && (
+        {dropdownPropertyList.length > 0 && (
           <View
             style={
               styles.propertySelectorWrap
             }>
+            <Text style={styles.propertyLabel}>PROPERTY</Text>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.propertySelector}
+              onPress={() =>
+                setIsPropertyDropdownOpen(open => !open)
+              }>
+              <Text
+                numberOfLines={1}
+                style={styles.propertySelectorText}>
+                {selectedPropertyName}
+              </Text>
+              <Text style={styles.propertySelectorChevron}>
+                {isPropertyDropdownOpen ? '⌃' : '⌄'}
+              </Text>
+            </TouchableOpacity>
 
-            <PropertyDropdown
-              selectedValue={
-                selectedProperty?.unit_id ??
-                selectedProperty?.id
-              }
+            {isPropertyDropdownOpen && (
+              <View style={styles.propertyDropdownMenu}>
+                <ScrollView
+                  nestedScrollEnabled
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                  style={styles.propertyDropdownOptions}>
+                  {dropdownPropertyList.map(property => {
+                    const propertyId =
+                      property?.unit_id ?? property?.id;
+                    const selectedId =
+                      selectedProperty?.unit_id ?? selectedProperty?.id;
+                    const isSelected =
+                      String(propertyId) === String(selectedId);
 
-              selectedLabel={
-                selectedPropertyName
-              }
-
-              fallbackProperties={
-                propertyList
-              }
-
-              onChange={(_, property) => {
-                console.log(
-                  'CARETAKER PROPERTY SELECTED:',
-                  property,
-                );
-
-                handleUnitChange(property);
-              }}
-            />
-
+                    return (
+                      <TouchableOpacity
+                        key={String(propertyId)}
+                        activeOpacity={0.8}
+                        style={[
+                          styles.propertyDropdownItem,
+                          isSelected && styles.propertyDropdownItemActive,
+                        ]}
+                        onPress={() => {
+                          setIsPropertyDropdownOpen(false);
+                          console.log(
+                            'CARETAKER PROPERTY SELECTED:',
+                            property,
+                          );
+                          handleUnitChange(property);
+                        }}>
+                        <Text
+                          style={[
+                            styles.propertyDropdownItemText,
+                            isSelected &&
+                              styles.propertyDropdownItemTextActive,
+                          ]}>
+                          {property?.unit_name ||
+                            property?.final_unit_name ||
+                            property?.name ||
+                            'Unnamed property'}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
           </View>
         )}
 
@@ -369,75 +461,91 @@ const styles = StyleSheet.create({
   },
 
   propertySelectorWrap: {
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
+    marginTop: 16,
     marginBottom: 16,
     zIndex: 10,
+    elevation: 10,
   },
 
   propertyLabel: {
     fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    color: '#5F7D72',
-    marginBottom: 8,
-    textTransform: 'uppercase',
+    fontWeight: '800',
+    letterSpacing: 1.1,
+    color: '#82918A',
+    marginBottom: 7,
   },
 
   propertySelector: {
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#EAF5F0',
+    paddingHorizontal: 16,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#D8EAE2',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-  },
-
-  propertyText: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1F2D2A',
-    marginRight: 10,
-  },
-
-  propertyChevron: {
-    fontSize: 18,
-    color: '#1F2D2A',
-    fontWeight: '700',
-  },
-
-  dropdownMenu: {
+    borderColor: '#D9E5DE',
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+  },
+
+  propertySelectorText: {
+    flex: 1,
+    marginRight: 12,
+    color: '#273B34',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+
+  propertySelectorChevron: {
+    color: '#17B978',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+
+  propertyDropdownMenu: {
+    position: 'absolute',
+    top: 78,
+    left: 16,
+    right: 16,
+    maxHeight: 500,
+    paddingVertical: 6,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#DDEAE4',
-    marginTop: 8,
+    borderColor: '#D9E5DE',
+    backgroundColor: '#FFFFFF',
     overflow: 'hidden',
+    zIndex: 10,
+    elevation: 12,
+    shadowColor: '#17251F',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
   },
 
-  dropdownItem: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#EEF3F1',
+  propertyDropdownOptions: {
+    maxHeight: 480,
   },
 
-  dropdownItemActive: {
+  propertyDropdownItem: {
+    minHeight: 48,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+
+  propertyDropdownItemActive: {
     backgroundColor: '#EAF7F2',
   },
 
-  dropdownItemText: {
-    fontSize: 13,
-    color: '#1F2D2A',
-    fontWeight: '600',
+  propertyDropdownItemText: {
+    color: '#50635B',
+    fontSize: 14,
+    lineHeight: 20,
   },
 
-  dropdownItemTextActive: {
-    color: '#0E8C66',
-    fontWeight: '700',
+  propertyDropdownItemTextActive: {
+    color: '#17B978',
+    fontWeight: '800',
   },
 
   content: {

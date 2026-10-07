@@ -14,33 +14,132 @@ import Svg, {Path} from 'react-native-svg';
 
 const PRIMARY = '#17B978';
 
-const getPropertyName = property =>
-  (typeof property === 'string' ? property : null) ??
-  property?.unit_name ??
-  property?.final_unit_name ??
-  property?.unitName ??
-  property?.property_name ??
-  property?.propertyName ??
-  property?.name ??
-  '';
+const getPropertyName = property => {
+  if (typeof property === 'string') {
+    return property.trim();
+  }
 
-const getPropertyId = property =>
-  (typeof property === 'string' ? property : null) ??
-  property?.unit_id ??
-  property?.unitId ??
-  property?.property_id ??
-  property?.id ??
-  getPropertyName(property);
+  return (
+    property?.unit_name ??
+    property?.final_unit_name ??
+    property?.unitName ??
+    property?.property_name ??
+    property?.propertyName ??
+    property?.name ??
+    ''
+  );
+};
 
-const normalizeProperties = properties =>
-  properties
-    .map(property => ({
-      ...property,
-      unit_id: getPropertyId(property),
-      unit_name: getPropertyName(property),
-    }))
-    .filter(property => property.unit_name);
+const getPropertyId = property => {
+  if (typeof property === 'string') {
+    return property.trim();
+  }
 
+  return (
+    property?.unit_id ??
+    property?.unitId ??
+    property?.property_id ??
+    property?.id ??
+    getPropertyName(property)
+  );
+};
+
+const normalizeProperties = properties => {
+  if (!Array.isArray(properties)) {
+    return [];
+  }
+
+  const merged = [];
+  const seenIds = new Set();
+
+  properties.forEach(property => {
+    const normalized =
+      typeof property === 'string'
+        ? {unit_id: property, unit_name: property}
+        : {...property};
+
+    const unitId = getPropertyId(normalized);
+    const unitName = getPropertyName(normalized);
+
+    if (
+      unitId === null ||
+      unitId === undefined ||
+      unitId === '' ||
+      !unitName ||
+      !String(unitName).trim()
+    ) {
+      return;
+    }
+
+    const key = String(unitId);
+
+    if (seenIds.has(key)) {
+      return;
+    }
+
+    seenIds.add(key);
+    merged.push({
+      ...normalized,
+      unit_id: unitId,
+      unit_name: unitName,
+    });
+  });
+
+  return merged;
+};
+
+const mergeProperties = (...lists) => {
+  const merged = [];
+  const seenIds = new Set();
+
+  lists
+    .flat()
+    .forEach(property => {
+      const normalized =
+        typeof property === 'string'
+          ? {unit_id: property, unit_name: property}
+          : {...property};
+
+      const unitId = getPropertyId(normalized);
+      const unitName = getPropertyName(normalized);
+
+      if (
+        unitId === null ||
+        unitId === undefined ||
+        unitId === '' ||
+        !unitName ||
+        !String(unitName).trim()
+      ) {
+        return;
+      }
+
+      const key = String(unitId);
+
+      if (seenIds.has(key)) {
+        return;
+      }
+
+      seenIds.add(key);
+      merged.push({
+        ...normalized,
+        unit_id: unitId,
+        unit_name: unitName,
+      });
+    });
+
+  return merged;
+};
+
+const chooseProperties = (storedList, fallbackList) => {
+  const normalizedFallback = normalizeProperties(fallbackList);
+  const normalizedStored = normalizeProperties(storedList);
+
+  if (normalizedStored.length) {
+    return mergeProperties(normalizedStored, normalizedFallback);
+  }
+
+  return mergeProperties(normalizedFallback);
+};
 const ChevronIcon = ({open}) => (
   <Svg width="18" height="18" viewBox="0 0 24 24" fill="none">
     <Path
@@ -76,16 +175,18 @@ const PropertyDropdown = ({
           ? JSON.parse(storedProperties)
           : [];
         const storedList = Array.isArray(parsedProperties)
-          ? normalizeProperties(parsedProperties)
+          ? parsedProperties
           : [];
-        const fallbackList = normalizeProperties(fallbackProperties);
+        const fallbackList = Array.isArray(fallbackProperties)
+          ? fallbackProperties
+          : [];
 
         console.log('PROPERTY DROPDOWN STORED DATA:', storedProperties);
         console.log('PROPERTY DROPDOWN PARSED DATA:', parsedProperties);
         console.log('PROPERTY DROPDOWN STORED LIST:', storedList);
         console.log('PROPERTY DROPDOWN FALLBACK LIST:', fallbackList);
 
-        const finalList = storedList.length ? storedList : fallbackList;
+        const finalList = chooseProperties(storedList, fallbackList);
         console.log('PROPERTY DROPDOWN FINAL LIST:', finalList);
 
         if (mounted) {
@@ -156,13 +257,13 @@ const PropertyDropdown = ({
               style={styles.optionsScroll}>
               {options.map(property => {
                 const isSelected =
-                  property.unit_name === selectedValue ||
+                  String(getPropertyId(property)) === String(selectedValue) ||
                   (property.unit_name === 'All properties' &&
-                    selectedValue === 'All properties');
+                    String(selectedValue) === '__all__');
 
                 return (
                   <TouchableOpacity
-                    key={String(property.unit_id)}
+                    key={String(getPropertyId(property))}
                     activeOpacity={0.8}
                     style={styles.option}
                     onPress={() => handleSelect(property)}>
@@ -221,7 +322,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     top: 78,
-    maxHeight: 230,
+    maxHeight: 420,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#D9E5DE',
@@ -234,7 +335,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   optionsScroll: {
-    maxHeight: 218,
+    maxHeight: 400,
   },
   option: {
     minHeight: 48,

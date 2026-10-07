@@ -32,10 +32,10 @@ const PRIMARY = '#17B978';
 const BACKGROUND = '#F4F8F5';
 
 const PROPERTY_API =
-  'http://staysereno.in/api/staff/properties';
+  'https://staysereno.in/api/staff/properties';
 
 const CHECKLIST_API =
-  'http://staysereno.in/api/staff/daily-cleaning-checklist';
+  'https://staysereno.in/api/staff/daily-cleaning-checklist';
 
 const ROOMS_STORAGE_KEY = 'dailyCleaningRooms';
 const SELECTED_PROPERTY_KEY =
@@ -120,6 +120,12 @@ const stripHtml = html => {
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n')
     .replace(/<\/div>/gi, '\n')
+    .replace(/<li\b[^>]*>/gi, '\n• ')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<ul\b[^>]*>/gi, '\n')
+    .replace(/<\/ul>/gi, '\n')
+    .replace(/<ol\b[^>]*>/gi, '\n')
+    .replace(/<\/ol>/gi, '\n')
     .replace(/<[^>]*>/g, '')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
@@ -127,7 +133,8 @@ const stripHtml = html => {
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
-    .replace(/\n\s*\n+/g, '\n')
+    .replace(/\n\s*\n+/g, '\n\n')
+    .replace(/[ \t]+\n/g, '\n')
     .trim();
 };
 
@@ -151,14 +158,17 @@ const normalizeMediaUri = uri => {
     value.startsWith('http://') ||
     value.startsWith('https://')
   ) {
-    return value;
+    return value.replace(
+      /^http:\/\//i,
+      'https://',
+    );
   }
 
   if (value.startsWith('//')) {
     return `https:${value}`;
   }
 
-  return `http://staysereno.in/${value.replace(/^\/+/, '')}`;
+  return `https://staysereno.in/${value.replace(/^\/+/, '')}`;
 };
 
 // ========================================
@@ -176,6 +186,10 @@ const getMediaType = item => {
     item?.mimeType ||
     item?.media_type ||
     item?.file_type ||
+    (typeof item?.file_name ===
+    'string'
+      ? item.file_name
+      : '') ||
     '';
 
   const typeString =
@@ -199,9 +213,25 @@ const getMediaType = item => {
     item?.uri ||
     item?.url ||
     item?.media_url ||
+    item?.mediaUrl ||
     item?.file_url ||
+    item?.fileUrl ||
+    item?.file_name ||
+    item?.fileName ||
     item?.path ||
+    item?.filepath ||
+    item?.file_path ||
+    item?.filePath ||
     item?.src ||
+    item?.media_path ||
+    item?.mediaPath ||
+    item?.image_url ||
+    item?.imageUrl ||
+    item?.download_url ||
+    item?.downloadUrl ||
+    item?.full_url ||
+    item?.fullUrl ||
+    item?.link ||
     '';
 
   const cleanUri =
@@ -250,14 +280,46 @@ const normalizeMediaItem = item => {
     };
   }
 
+  const nestedMedia =
+    item?.media ||
+    item?.file ||
+    item?.asset ||
+    null;
+
   const rawUri =
     item?.uri ||
     item?.url ||
     item?.media_url ||
+    item?.mediaUrl ||
     item?.file_url ||
+    item?.fileUrl ||
+    item?.file_name ||
+    item?.fileName ||
     item?.path ||
+    item?.filepath ||
+    item?.file_path ||
+    item?.filePath ||
     item?.src ||
     item?.media_path ||
+    item?.mediaPath ||
+    item?.image_url ||
+    item?.imageUrl ||
+    item?.download_url ||
+    item?.downloadUrl ||
+    item?.full_url ||
+    item?.fullUrl ||
+    item?.link ||
+    (nestedMedia &&
+    typeof nestedMedia === 'object'
+      ? nestedMedia.url ||
+        nestedMedia.path ||
+        nestedMedia.file ||
+        nestedMedia.src ||
+        nestedMedia.uri ||
+        nestedMedia.file_name ||
+        nestedMedia.fileName ||
+        ''
+      : '' ) ||
     '';
 
   const uri =
@@ -278,8 +340,27 @@ const normalizeMediaItem = item => {
       item?.fileName ||
       item?.filename ||
       item?.name ||
+      item?.file_name ||
+      item?.fileName ||
       'Media',
   };
+};
+
+const getMediaDisplayName = mediaItem => {
+  const fileName =
+    mediaItem?.fileName ||
+    mediaItem?.filename ||
+    mediaItem?.name ||
+    mediaItem?.file_name ||
+    mediaItem?.url ||
+    mediaItem?.uri ||
+    'Media';
+
+  return String(fileName)
+    .split('/').pop()
+    .split('?')[0]
+    .split('#')[0] ||
+    'Media';
 };
 
 // ========================================
@@ -307,6 +388,22 @@ const getRoomMedia = room => {
     Array.isArray(room?.files)
   ) {
     media = room.files;
+  } else if (
+    Array.isArray(room?.attachments)
+  ) {
+    media = room.attachments;
+  } else if (
+    Array.isArray(room?.mediaUrls)
+  ) {
+    media = room.mediaUrls;
+  } else if (
+    Array.isArray(room?.media_url)
+  ) {
+    media = room.media_url;
+  } else if (
+    Array.isArray(room?.checklist_media)
+  ) {
+    media = room.checklist_media;
   } else if (room?.mediaUri) {
     media = [
       {
@@ -319,9 +416,33 @@ const getRoomMedia = room => {
           'Uploaded file',
       },
     ];
+  } else if (room?.mediaUrl) {
+    media = [
+      {
+        uri: room.mediaUrl,
+        type:
+          room.mediaType ||
+          'photo',
+        fileName:
+          room.mediaName ||
+          'Uploaded file',
+      },
+    ];
+  } else if (room?.media_url) {
+    media = [
+      {
+        uri: room.media_url,
+        type:
+          room.mediaType ||
+          'photo',
+        fileName:
+          room.mediaName ||
+          'Uploaded file',
+      },
+    ];
   }
 
-  return media 
+  return media
     .map(normalizeMediaItem)
     .filter(Boolean);
 };
@@ -468,6 +589,19 @@ const normalizeChecklistRecord = (
     return null;
   }
 
+
+  console.log(
+  '========== RAW CHECKLIST FROM API =========='
+);
+
+console.log(
+  JSON.stringify(item, null, 2)
+);
+
+console.log(
+  '============================================'
+);
+
   const sectionObject =
     item?.section &&
     typeof item.section === 'object'
@@ -534,9 +668,16 @@ const normalizeChecklistRecord = (
     item?.media ??
     item?.medias ??
     item?.media_files ??
+    item?.mediaFiles ??
+    item?.mediaUrls ??
+    item?.media_url ??
+    item?.mediaUrl ??
     item?.images ??
     item?.files ??
     item?.attachments ??
+    item?.uploads ??
+    item?.checklist_media ??
+    item?.checklistMedia ??
     [];
 
   // Sometimes API returns JSON string
@@ -566,7 +707,18 @@ const normalizeChecklistRecord = (
     !Array.isArray(rawMedia) &&
     typeof rawMedia === 'object'
   ) {
-    rawMedia = [rawMedia];
+    const nestedMedia =
+      Array.isArray(rawMedia.data)
+        ? rawMedia.data
+        : Array.isArray(rawMedia.files)
+        ? rawMedia.files
+        : Array.isArray(rawMedia.media)
+        ? rawMedia.media
+        : Array.isArray(rawMedia.attachments)
+        ? rawMedia.attachments
+        : [rawMedia];
+
+    rawMedia = nestedMedia;
   }
 
   const normalizedMedia =
@@ -1561,31 +1713,14 @@ useEffect(() => {
 
   useFocusEffect(
   useCallback(() => {
-    authExpiredAlertShownRef.current =
-      false;
-
+    authExpiredAlertShownRef.current = false;
     loadProperties();
 
-    if (
-      selectedDate &&
-      selectedPropertyId &&
-      selectedDate <= todayKey
-    ) {
-      loadChecklistFromApi();
-    } else if (
-      selectedDate > todayKey
-    ) {
-      setSavedRooms([]);
+    if (selectedDate && selectedPropertyId && selectedDate <= todayKey) {
+      loadChecklistFromApi(); // Ensure this updates savedRooms state
     }
-
     return undefined;
-  }, [
-    loadProperties,
-    selectedDate,
-    selectedPropertyId,
-    todayKey,
-    loadChecklistFromApi,
-  ]),
+  }, [loadProperties, selectedDate, selectedPropertyId, todayKey, loadChecklistFromApi])
 );
 
   // ======================================
@@ -2369,14 +2504,14 @@ useEffect(() => {
                     style={
                       styles.emptySectionTitle
                     }>
-                    No sections found
+                    No sections added
                   </Text>
 
                   <Text
                     style={
                       styles.emptySectionText
                     }>
-                    No cleaning sections are available for this property.
+                    No sections added to this property.
                   </Text>
 
                 </View>
@@ -2508,16 +2643,23 @@ useEffect(() => {
 
                       {room && (
                         <>
-                          <Text
-                            style={
-                              styles.roomComment
-                            }>
-                            {
-                              room?.description ||
-                              room?.comment ||
-                              sectionDescription
-                            }
-                          </Text>
+                          {sectionDescription ? (
+                            <Text
+                              style={
+                                styles.sectionDescription
+                              }>
+                              {sectionDescription}
+                            </Text>
+                          ) : null}
+{/* 
+                          {room?.description || room?.comment ? (
+                            <Text
+                              style={
+                                styles.roomComment
+                              }>
+                              {room?.description || room?.comment}
+                            </Text>
+                          ) : null} */}
 
                           {/* MEDIA */}
 
@@ -2525,13 +2667,7 @@ useEffect(() => {
                             room,
                           ).length >
                             0 && (
-                            <TouchableOpacity
-                              activeOpacity={
-                                0.85
-                              }
-                              style={
-                                styles.mediaPreview
-                              }>
+                            <View style={styles.mediaPreview}>
 
                               <View
                                 style={
@@ -2555,11 +2691,13 @@ useEffect(() => {
                                     item,
                                     index,
                                   ) => (
-                                    <View
-                                      key={`${item?.uri}-${index}`}
-                                      style={
-                                        styles.mediaItemPreview
-                                      }>
+                                    <TouchableOpacity
+  key={`${item?.uri}-${index}`}
+  activeOpacity={0.85}
+  style={styles.mediaItemPreview}
+  onPress={() =>
+    openRoomMedia(room, item)
+  }>
 
                                       {item?.type ===
                                       'photo' ? (
@@ -2608,16 +2746,13 @@ useEffect(() => {
                                         </View>
                                       )}
 
-                                    </View>
+                                    </TouchableOpacity>
                                   ),
                                 )}
 
                               </ScrollView>
-
-                            </TouchableOpacity>
+                            </View>
                           )}
-
-                          {/* DIVIDER */}
 
                           <View
                             style={
@@ -3105,7 +3240,7 @@ const styles =
 
     content: {
       padding: 16,
-      paddingBottom: 32,
+      paddingBottom: 60,
     },
 
     propertyDropdownWrap: {
@@ -3335,6 +3470,21 @@ const styles =
       width: '100%',
       height: '100%',
       resizeMode: 'cover',
+    },
+
+    mediaFileName: {
+      position: 'absolute',
+      bottom: 4,
+      left: 4,
+      right: 4,
+      fontSize: 8,
+      color: '#FFFFFF',
+      fontWeight: '700',
+      textAlign: 'center',
+      backgroundColor: 'rgba(0,0,0,0.35)',
+      borderRadius: 4,
+      paddingHorizontal: 4,
+      paddingVertical: 2,
     },
 
     videoPreviewIcon: {

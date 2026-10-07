@@ -24,7 +24,6 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, {Path} from 'react-native-svg';
 
-import PropertyDropdown from '../components/PropertyDropdown';
 import PageHeader from '../components/PageHeader';
 
 import {
@@ -34,7 +33,7 @@ import {
 } from 'react-native-pell-rich-editor';
 
 const INVENTORY_API =
-  'http://staysereno.in/api/staff/inventory';
+  'https://staysereno.in/api/staff/inventory';
 
 
 const propertyOptions = [
@@ -42,6 +41,75 @@ const propertyOptions = [
   'Sereno Ikigai - 4BHK Villa with Pool',
   'Sereno Bloom - Penthouse Suite',
 ];
+
+const getPropertyName = property => {
+  if (typeof property === 'string') {
+    return property.trim();
+  }
+
+  return (
+    property?.unit_name ??
+    property?.final_unit_name ??
+    property?.unitName ??
+    property?.property_name ??
+    property?.propertyName ??
+    property?.name ??
+    ''
+  );
+};
+
+const getPropertyId = property => {
+  if (typeof property === 'string') {
+    return property.trim();
+  }
+
+  return (
+    property?.unit_id ??
+    property?.unitId ??
+    property?.property_id ??
+    property?.id ??
+    getPropertyName(property)
+  );
+};
+
+const mergePropertyOptions = (...lists) => {
+  const merged = [];
+  const seenIds = new Set();
+
+  lists.flat().forEach(property => {
+    const normalized =
+      typeof property === 'string'
+        ? {unit_id: property, unit_name: property}
+        : {...property};
+    const unitId = getPropertyId(normalized);
+    const unitName = getPropertyName(normalized);
+
+    if (
+      unitId === null ||
+      unitId === undefined ||
+      unitId === '' ||
+      !unitName ||
+      !String(unitName).trim()
+    ) {
+      return;
+    }
+
+    const key = String(unitId);
+
+    if (seenIds.has(key)) {
+      return;
+    }
+
+    seenIds.add(key);
+    merged.push({
+      ...normalized,
+      unit_id: unitId,
+      unit_name: unitName,
+    });
+  });
+
+  return merged;
+};
 
 const INVENTORY_STORAGE_KEY =
   'inventoryDetails';
@@ -292,6 +360,36 @@ const InventoryDetailScreen = ({
     propertyOptions[0],
   );
 
+  const [
+    selectedPropertyId,
+    setSelectedPropertyId,
+  ] = useState(null);
+
+  const [availableProperties, setAvailableProperties] =
+    useState(() =>
+      mergePropertyOptions([], propertyOptions),
+    );
+
+  const [isPropertyDropdownOpen, setIsPropertyDropdownOpen] =
+    useState(false);
+
+  const [isPropertyListLoading, setIsPropertyListLoading] =
+    useState(true);
+
+  useEffect(() => {
+    console.log(
+      'INVENTORY DROPDOWN OPTION COUNT:',
+      availableProperties.length,
+    );
+    console.log(
+      'INVENTORY DROPDOWN OPTIONS:',
+      availableProperties.map(property => ({
+        id: property.unit_id,
+        name: property.unit_name,
+      })),
+    );
+  }, [availableProperties]);
+
   /* =======================================================
      DATE
   ======================================================= */
@@ -447,6 +545,60 @@ const InventoryDetailScreen = ({
       );
     }
   };
+
+  useEffect(() => {
+    const loadInitialProperty = async () => {
+      try {
+        const storedProperties =
+          await AsyncStorage.getItem('properties');
+
+        const parsedProperties = storedProperties
+          ? JSON.parse(storedProperties)
+          : [];
+
+        const storedList = Array.isArray(parsedProperties)
+          ? parsedProperties
+          : [];
+
+        setAvailableProperties(
+          mergePropertyOptions(
+            storedList,
+            propertyOptions,
+          ),
+        );
+
+        const firstProperty = storedList[0];
+
+        if (firstProperty) {
+          setSelectedProperty(
+            firstProperty?.unit_name ||
+              firstProperty?.unitName ||
+              firstProperty?.name ||
+              propertyOptions[0],
+          );
+          setSelectedPropertyId(
+            firstProperty?.unit_id ??
+              firstProperty?.unitId ??
+              firstProperty?.property_id ??
+              firstProperty?.id ??
+              null,
+          );
+        }
+      } catch (error) {
+        console.log(
+          'LOAD INITIAL INVENTORY PROPERTY ERROR:',
+          error,
+        );
+        setAvailableProperties(
+          mergePropertyOptions([], propertyOptions),
+        );
+      } finally {
+        setIsPropertyListLoading(false);
+      }
+    };
+
+    loadInitialProperty();
+  }, []);
 
   /* =======================================================
      FIND INVENTORY ID
@@ -716,8 +868,16 @@ const InventoryDetailScreen = ({
             );
 
             return (
-              itemDateKey ===
-              selectedDateKey
+              itemDateKey === selectedDateKey &&
+              (!selectedPropertyId ||
+                String(
+                  item?.unit_id ??
+                    item?.unitId ??
+                    item?.property_id ??
+                    item?.propertyId ??
+                    item?.property?.unit_id ??
+                    item?.property?.id,
+                ) === String(selectedPropertyId))
             );
           },
         );
@@ -866,9 +1026,16 @@ const InventoryDetailScreen = ({
   ======================================================= */
 
   useEffect(() => {
+    if (!selectedPropertyId) {
+      clearEditor();
+      setLoadingInventory(false);
+      return;
+    }
+
     fetchInventory();
   }, [
     selectedProperty,
+    selectedPropertyId,
     selectedDateKey,
   ]);
 
@@ -1002,12 +1169,7 @@ const InventoryDetailScreen = ({
           return;
         }
 
-        /*
-         * Current unit ID
-         *
-         * Abhi testing ke liye 20.
-         */
-        const unitId = 20;
+        const unitId = selectedPropertyId;
 
         if (!unitId) {
           Alert.alert(
@@ -1507,22 +1669,84 @@ const InventoryDetailScreen = ({
             style={
               styles.propertySelectorWrap
             }>
-            <PropertyDropdown
-              selectedValue={
-                selectedProperty
-              }
-              selectedLabel={
-                selectedProperty
-              }
-              fallbackProperties={
-                propertyOptions
-              }
-              onChange={property =>
-                setSelectedProperty(
-                  property,
-                )
-              }
-            />
+            <Text style={styles.propertyLabel}>PROPERTY</Text>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.propertySelector}
+              onPress={() =>
+                setIsPropertyDropdownOpen(open => !open)
+              }>
+              <Text
+                numberOfLines={1}
+                style={styles.propertySelectorText}>
+                {selectedProperty}
+              </Text>
+              <Text style={styles.propertyChevron}>
+                {isPropertyDropdownOpen ? '⌃' : '⌄'}
+              </Text>
+            </TouchableOpacity>
+
+            {isPropertyDropdownOpen && (
+              <View style={styles.propertyDropdownMenu}>
+                {isPropertyListLoading ? (
+                  <View style={styles.propertyDropdownLoading}>
+                    <ActivityIndicator color="#17B978" size="small" />
+                  </View>
+                ) : availableProperties.length === 0 ? (
+                  <Text style={styles.propertyDropdownEmpty}>
+                    No properties available
+                  </Text>
+                ) : (
+                  <ScrollView
+                    nestedScrollEnabled
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
+                    style={styles.propertyDropdownOptions}>
+                    {availableProperties.map(property => {
+                      const propertyId = getPropertyId(property);
+                      const isSelected =
+                        String(propertyId) ===
+                          String(selectedPropertyId) ||
+                        (!selectedPropertyId &&
+                          property.unit_name === selectedProperty);
+
+                      return (
+                        <TouchableOpacity
+                          key={String(propertyId)}
+                          activeOpacity={0.8}
+                          style={[
+                            styles.propertyDropdownItem,
+                            isSelected &&
+                              styles.propertyDropdownItemActive,
+                          ]}
+                          onPress={() => {
+                            setIsPropertyDropdownOpen(false);
+                            setSelectedProperty(
+                              property.unit_name,
+                            );
+                            setSelectedPropertyId(
+                              property.unit_id ??
+                                property.unitId ??
+                                property.property_id ??
+                                property.id ??
+                                null,
+                            );
+                          }}>
+                          <Text
+                            style={[
+                              styles.propertyDropdownItemText,
+                              isSelected &&
+                                styles.propertyDropdownItemTextActive,
+                            ]}>
+                            {property.unit_name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                )}
+              </View>
+            )}
           </View>
 
           {/* =================================================
@@ -2076,6 +2300,97 @@ const styles =
     propertySelectorWrap: {
       marginBottom: 16,
       zIndex: 10,
+      elevation: 10,
+      position: 'relative',
+    },
+
+    propertyLabel: {
+      fontSize: 12,
+      fontWeight: '800',
+      letterSpacing: 1.1,
+      color: '#82918A',
+      marginBottom: 7,
+    },
+
+    propertySelector: {
+      minHeight: 52,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: '#D9E5DE',
+      backgroundColor: '#FFFFFF',
+    },
+
+    propertySelectorText: {
+      flex: 1,
+      marginRight: 12,
+      color: '#273B34',
+      fontSize: 14,
+      fontWeight: '700',
+    },
+
+    propertyChevron: {
+      color: '#17B978',
+      fontSize: 20,
+      fontWeight: '700',
+    },
+
+    propertyDropdownMenu: {
+      position: 'absolute',
+      top: 78,
+      left: 0,
+      right: 0,
+      maxHeight: 500,
+      paddingVertical: 6,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: '#D9E5DE',
+      backgroundColor: '#FFFFFF',
+      elevation: 12,
+      shadowColor: '#17251F',
+      shadowOffset: {width: 0, height: 4},
+      shadowOpacity: 0.12,
+      shadowRadius: 8,
+    },
+
+    propertyDropdownOptions: {
+      maxHeight: 480,
+    },
+
+    propertyDropdownItem: {
+      minHeight: 48,
+      justifyContent: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+    },
+
+    propertyDropdownItemActive: {
+      backgroundColor: '#EAF7F2',
+    },
+
+    propertyDropdownItemText: {
+      color: '#50635B',
+      fontSize: 14,
+      lineHeight: 20,
+    },
+
+    propertyDropdownItemTextActive: {
+      color: '#17B978',
+      fontWeight: '800',
+    },
+
+    propertyDropdownLoading: {
+      padding: 18,
+      alignItems: 'center',
+    },
+
+    propertyDropdownEmpty: {
+      padding: 16,
+      fontSize: 13,
+      color: '#758B82',
     },
 
     /* =====================================================

@@ -267,23 +267,25 @@ const LoginScreen = ({navigation}) => {
                 style={
                   styles.stayText
                 }>
-                Stay
+                Housekeeping
               </Text>
 
               <Text
                 style={
                   styles.serenoText
                 }>
-                Sereno
+                Heroes
               </Text>
 
             </View>
+
+            <View style={styles.brandDivider} />
 
             <Text
               style={
                 styles.staffText
               }>
-              MAINTENANCE STAFF
+              A <Text style={styles.productBrand}>StaySereno</Text> PRODUCT
             </Text>
 
           </View>
@@ -496,32 +498,44 @@ const styles =
     },
 
     brandRow: {
-      flexDirection: 'row',
+      flexDirection: 'column',
       alignItems: 'center',
     },
 
     stayText: {
-      fontSize: 32,
-      lineHeight: 40,
-      fontWeight: '700',
+      fontSize: 30,
+      lineHeight: 36,
+      fontWeight: '800',
       color: DARK,
-      letterSpacing: -1.5,
+      letterSpacing: 0,
     },
 
     serenoText: {
-      fontSize: 32,
-      lineHeight: 40,
+      fontSize: 30,
+      lineHeight: 36,
       fontWeight: '800',
       color: PRIMARY,
-      letterSpacing: -1.5,
+      letterSpacing: 0,
+    },
+
+    brandDivider: {
+      width: '64%',
+      height: 1,
+      marginTop: 16,
+      marginBottom: 15,
+      backgroundColor: '#D6E5DD',
     },
 
     staffText: {
-      marginTop: 7,
       fontSize: 11,
-      fontWeight: '700',
-      letterSpacing: 2.2,
+      fontWeight: '500',
+      letterSpacing: 0.5,
       color: '#687770',
+    },
+
+    productBrand: {
+      fontWeight: '800',
+      color: DARK,
     },
 
     loginCard: {

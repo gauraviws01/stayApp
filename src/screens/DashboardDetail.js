@@ -1,4 +1,5 @@
-import React from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
+
 import {
   View,
   Text,
@@ -6,371 +7,2624 @@ import {
   ScrollView,
   StatusBar,
   Dimensions,
+  Image,
 } from 'react-native';
 
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+
 import PageHeader from '../components/PageHeader';
 
-const { width, height } = Dimensions.get('window');
+// ======================================================
+// FIND TAGS FROM ANY PROPERTY / BOOKING SHAPE
+// ======================================================
+
+/* =========================
+   TAGS RESOLVER
+========================= */
+
+const findTags = object => {
+  if (!object || typeof object !== 'object') {
+    return [];
+  }
+
+  // Direct / known locations first
+  const directSources = [
+    object?.tags,
+
+    object?.home?.tags,
+    object?.home_property?.tags,
+
+    object?.propertyData?.tags,
+    object?.propertyData?.home?.tags,
+    object?.propertyData?.home_property?.tags,
+
+    object?.propertyObject?.tags,
+    object?.propertyObject?.home?.tags,
+    object?.propertyObject?.home_property?.tags,
+
+    object?.property_data?.tags,
+    object?.property_data?.home?.tags,
+    object?.property_data?.home_property?.tags,
+
+    object?.property?.tags,
+    object?.property?.home?.tags,
+    object?.property?.home_property?.tags,
+  ];
+
+  for (const source of directSources) {
+    if (Array.isArray(source) && source.length > 0) {
+      return source;
+    }
+  }
+
+  // Recursive fallback
+  // API structure agar kisi unknown nested key ke andar
+  // tags contain karti hai to yahan se mil jayenge.
+  const visited = new Set();
+
+  const recursiveFind = current => {
+    if (!current || typeof current !== 'object') {
+      return [];
+    }
+
+    if (visited.has(current)) {
+      return [];
+    }
+
+    visited.add(current);
+
+    if (Array.isArray(current)) {
+      return [];
+    }
+
+    // Direct tags on current object
+    if (Array.isArray(current.tags) && current.tags.length > 0) {
+      return current.tags;
+    }
+
+    for (const key of Object.keys(current)) {
+      const value = current[key];
+
+      if (!value || typeof value !== 'object') {
+        continue;
+      }
+
+      // Avoid recursively scanning huge/unrelated structures
+      if (
+        key === 'amenities' ||
+        key === 'amenity' ||
+        key === 'images' ||
+        key === 'gallery' ||
+        key === 'media'
+      ) {
+        continue;
+      }
+
+      const result = recursiveFind(value);
+
+      if (Array.isArray(result) && result.length > 0) {
+        return result;
+      }
+    }
+
+    return [];
+  };
+
+  return recursiveFind(object);
+};
+
+const getTagName = tag =>
+  tag?.name ||
+  tag?.tag_name ||
+  tag?.tagName ||
+  tag?.title ||
+  tag?.label ||
+  '';
+
+const {width, height} = Dimensions.get('window');
+
+const BOOKING_DETAIL_API =
+  'https://staysereno.in/api/staff/booking/detail';
 
 const wp = value => (width * value) / 100;
 const hp = value => (height * value) / 100;
 
-const Label = ({ children }) => (
-  <Text style={styles.smallLabel}>{children}</Text>
+/* =========================================================
+   BASIC HELPERS
+/* =========================================================
+========================================================= */
+
+const getBookingValue = (
+  booking,
+  keys,
+  fallback = '—',
+) => {
+  for (const key of keys) {
+    const value = booking?.[key];
+
+    if (
+      value !== undefined &&
+      value !== null &&
+      value !== ''
+    ) {
+      return value;
+    }
+  }
+
+  return fallback;
+};
+
+const getTextValue = (value, fallback = '—') => {
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number'
+  ) {
+    return String(value);
+  }
+
+  if (value && typeof value === 'object') {
+    return getTextValue(
+      value.final_unit_name ||
+        value.unit_name ||
+        value.unitName ||
+        value.name ||
+        value.title,
+      fallback,
+    );
+  }
+
+  return fallback;
+};
+
+const getNestedBookingValue = (
+  value,
+  key,
+  fallback,
+) => {
+  if (!value || typeof value !== 'object') {
+    return fallback;
+  }
+
+  if (
+    value[key] !== undefined &&
+    value[key] !== null &&
+    value[key] !== ''
+  ) {
+    return value[key];
+  }
+
+  for (const child of Object.values(value)) {
+    if (child && typeof child === 'object') {
+      const result = getNestedBookingValue(
+        child,
+        key,
+        undefined,
+      );
+
+      if (result !== undefined) {
+        return result;
+      }
+    }
+  }
+
+  return fallback;
+};
+
+const normalizeGuestName = value => {
+  if (
+    !value ||
+    value === '—' ||
+    value === 'null' ||
+    value === 'undefined'
+  ) {
+    return 'Unknown Guest';
+  }
+
+  return String(value).trim();
+};
+
+/* =========================================================
+   JSON PARSER
+========================================================= */
+
+const parseJsonSafely = value => {
+  if (!value) {
+    return {};
+  }
+
+  if (typeof value === 'object') {
+    return value;
+  }
+
+  if (typeof value !== 'string') {
+    return {};
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    console.log(
+      'BOOKING JSON PARSE ERROR:',
+      error,
+    );
+
+    return {};
+  }
+};
+
+/* =========================================================
+   DATE PARSER
+
+   Supports:
+   24 September 2026
+   2026-09-24
+   2026-09-24 07:17:37
+   ISO dates
+========================================================= */
+
+const parseBookingDate = value => {
+  if (
+    !value ||
+    value === '—'
+  ) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime())
+      ? null
+      : value;
+  }
+
+  const stringValue = String(value).trim();
+
+  // --------------------------------------------
+  // DD Month YYYY
+  // Example: 24 September 2026
+  // --------------------------------------------
+
+  const longDateMatch =
+    stringValue.match(
+      /^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/,
+    );
+
+  if (longDateMatch) {
+    const day =
+      Number(longDateMatch[1]);
+
+    const monthName =
+      longDateMatch[2];
+
+    const year =
+      Number(longDateMatch[3]);
+
+    const monthMap = {
+      january: 0,
+      february: 1,
+      march: 2,
+      april: 3,
+      may: 4,
+      june: 5,
+      july: 6,
+      august: 7,
+      september: 8,
+      october: 9,
+      november: 10,
+      december: 11,
+    };
+
+    const month =
+      monthMap[
+        monthName.toLowerCase()
+      ];
+
+    if (
+      month !== undefined
+    ) {
+      const date = new Date(
+        year,
+        month,
+        day,
+      );
+
+      if (
+        !Number.isNaN(
+          date.getTime(),
+        )
+      ) {
+        return date;
+      }
+    }
+  }
+
+  // --------------------------------------------
+  // YYYY-MM-DD
+  // --------------------------------------------
+
+  const isoDateMatch =
+    stringValue.match(
+      /^(\d{4})-(\d{2})-(\d{2})$/,
+    );
+
+  if (isoDateMatch) {
+    const year =
+      Number(isoDateMatch[1]);
+
+    const month =
+      Number(isoDateMatch[2]) - 1;
+
+    const day =
+      Number(isoDateMatch[3]);
+
+    const date = new Date(
+      year,
+      month,
+      day,
+    );
+
+    if (
+      !Number.isNaN(
+        date.getTime(),
+      )
+    ) {
+      return date;
+    }
+  }
+
+  // --------------------------------------------
+  // YYYY-MM-DD HH:mm:ss
+  // --------------------------------------------
+
+  const sqlDateMatch =
+    stringValue.match(
+      /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/,
+    );
+
+  if (sqlDateMatch) {
+    const year =
+      Number(sqlDateMatch[1]);
+
+    const month =
+      Number(sqlDateMatch[2]) - 1;
+
+    const day =
+      Number(sqlDateMatch[3]);
+
+    const hour =
+      Number(sqlDateMatch[4]);
+
+    const minute =
+      Number(sqlDateMatch[5]);
+
+    const second =
+      Number(sqlDateMatch[6] || 0);
+
+    const date = new Date(
+      year,
+      month,
+      day,
+      hour,
+      minute,
+      second,
+    );
+
+    if (
+      !Number.isNaN(
+        date.getTime(),
+      )
+    ) {
+      return date;
+    }
+  }
+
+  // --------------------------------------------
+  // Normal fallback
+  // --------------------------------------------
+
+  const date =
+    new Date(stringValue);
+
+  if (
+    !Number.isNaN(
+      date.getTime(),
+    )
+  ) {
+    return date;
+  }
+
+  return null;
+};
+
+const formatDisplayDate = value => {
+  const date = parseBookingDate(value);
+
+  if (!date) {
+    return '—';
+  }
+
+  return date.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+};
+
+const formatCreatedDate = value => {
+  const stringValue = String(value ?? '').trim();
+  const parsedDate =
+    parseBookingDate(stringValue) ||
+    parseBookingDate(
+      stringValue.match(/^\d{1,2}\s+[A-Za-z]+\s+\d{4}/)?.[0],
+    );
+
+  if (!parsedDate) {
+    return '—';
+  }
+
+  const dateText = formatDisplayDate(parsedDate);
+  const timeMatch = stringValue.match(
+    /(\d{1,2}):(\d{2})(?::\d{2})?\s*:?[ ]*(AM|PM)/i,
+  );
+
+  if (!timeMatch) {
+    return dateText;
+  }
+
+  return `${dateText} ${timeMatch[1]}:${timeMatch[2]} ${timeMatch[3].toUpperCase()}`;
+};
+
+/* =========================================================
+========================================================= */
+
+const getWeekdayName = value => {
+  const date =
+    parseBookingDate(value);
+
+  if (!date) {
+    return '—';
+  }
+
+  return date.toLocaleDateString(
+    'en-US',
+    {
+      weekday: 'long',
+    },
+  );
+};
+
+/* =========================================================
+   NIGHT COUNT
+========================================================= */
+
+const calculateNightCount = (
+  arrival,
+  departure,
+  apiNightCount,
+) => {
+  // API ka exact no_of_nights
+  if (
+    apiNightCount !== undefined &&
+    apiNightCount !== null &&
+    apiNightCount !== ''
+  ) {
+    const numeric =
+      Number(apiNightCount);
+
+    if (
+      !Number.isNaN(numeric)
+    ) {
+      return numeric;
+    }
+  }
+
+  const start =
+    parseBookingDate(arrival);
+
+  const end =
+    parseBookingDate(departure);
+
+  if (!start || !end) {
+    return 0;
+  }
+
+  const diff =
+    end.getTime() -
+    start.getTime();
+
+  const days =
+    Math.round(
+      diff /
+        (1000 *
+          60 *
+          60 *
+          24),
+    );
+
+  return days > 0
+    ? days
+    : 0;
+};
+
+/* =========================================================
+   CURRENCY
+========================================================= */
+
+const formatCurrency = value => {
+  if (
+    value === undefined ||
+    value === null ||
+    value === ''
+  ) {
+    return '₹0.00';
+  }
+
+  const numericValue =
+    Number(
+      String(value).replace(
+        /[^0-9.-]/g,
+        '',
+      ),
+    );
+
+  if (
+    Number.isNaN(
+      numericValue,
+    )
+  ) {
+    return String(value);
+  }
+
+  return new Intl.NumberFormat(
+    'en-IN',
+    {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    },
+  ).format(numericValue);
+};
+
+const parseAmount = value => {
+  if (
+    value === undefined ||
+    value === null ||
+    value === ''
+  ) {
+    return 0;
+  }
+
+  const numericValue = Number(
+    String(value).replace(/[^0-9.-]/g, ''),
+  );
+
+  return Number.isNaN(numericValue)
+    ? 0
+    : numericValue;
+};
+
+const parseAdditionalCharges = value => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  return [];
+};
+
+const getAdditionalChargeLabel = (charge, index) => {
+  if (typeof charge === 'string') {
+    return charge;
+  }
+
+  return (
+    charge?.name ||
+    charge?.title ||
+    charge?.label ||
+    charge?.charge_name ||
+    charge?.additional_charge_name ||
+    charge?.description ||
+    `Additional charge ${index + 1}`
+  );
+};
+
+const getAdditionalChargeAmount = charge => {
+  if (typeof charge === 'number') {
+    return charge;
+  }
+
+  return (
+    charge?.amount ??
+    charge?.charge_amount ??
+    charge?.additional_charge_amount ??
+    charge?.price ??
+    charge?.total ??
+    charge?.value
+  );
+};
+
+/* =========================================================
+   LABEL
+========================================================= */
+
+const Label = ({
+  children,
+}) => (
+  <Text style={styles.smallLabel}>
+    {children}
+  </Text>
 );
 
-const PriceCard = ({ title, value, valueStyle }) => (
-  <View style={styles.priceCard}>
-    <Text style={styles.priceCardTitle}>{title}</Text>
+/* =========================================================
+   PRICE CARD
+========================================================= */
 
-    <Text style={[styles.priceCardValue, valueStyle]}>{value}</Text>
+const PriceCard = ({
+  title,
+  value,
+  valueStyle,
+}) => (
+  <View style={styles.priceCard}>
+    <Text style={styles.priceCardTitle}>
+      {title}
+    </Text>
+
+    <Text
+      style={[
+        styles.priceCardValue,
+        valueStyle,
+      ]}
+      numberOfLines={1}
+      adjustsFontSizeToFit
+    >
+      {value}
+    </Text>
   </View>
 );
 
-const BookingDetail = ({ navigation, route }) => {
-  const insets = useSafeAreaInsets();
+/* =========================================================
+   MAIN SCREEN
+========================================================= */
 
-  const booking = route?.params?.booking || {};
+const BookingDetail = ({
+  navigation,
+  route,
+  embedded = false,
+  onClose,
+}) => {
+  const insets =
+    useSafeAreaInsets();
+
+  const routeBooking =
+    route?.params?.booking ||
+    route?.params?.item ||
+    {};
+
+  const [bookingDetail, setBookingDetail] =
+    useState(null);
+
+  const [requestedBookingId, setRequestedBookingId] =
+    useState(null);
+
+  const booking =
+    bookingDetail || routeBooking;
+
+  /* =======================================================
+     CUSTOMER DETAIL
+  ======================================================= */
+
+  const customer =
+    useMemo(
+      () =>
+        parseJsonSafely(
+          booking?.customer_detail,
+        ),
+      [booking],
+    );
+
+  /* =======================================================
+     OTA RESPONSE
+  ======================================================= */
+
+  const otaResponse =
+    useMemo(
+      () =>
+        parseJsonSafely(
+          booking?.booking_notes,
+        ),
+      [booking],
+    );
+
+  const otaReservation =
+    Array.isArray(
+      otaResponse?.reservations,
+    )
+      ? otaResponse.reservations[0] ||
+        {}
+      : {};
+
+  /* =======================================================
+     ROOM DATA FROM OTA
+  ======================================================= */
+
+  const otaRoom =
+    Array.isArray(
+      otaReservation?.rooms,
+    )
+      ? otaReservation.rooms[0] ||
+        {}
+      : {};
+
+  /* =======================================================
+     BOOKING ID
+  ======================================================= */
 
   const bookingId =
-    booking?.bookingId || booking?.booking_id || booking?.id || '178931752189';
+    getBookingValue(
+      routeBooking,
+      [
+        'bookingId',
+        'booking_id',
+        'id',
+      ],
+      '—',
+    );
+
+  const hasPaymentDetails = [
+    'guest_total_payable_amount',
+    'detail_paid_amount',
+    'detail_pending_amount',
+  ].every(
+    key =>
+      getNestedBookingValue(
+        booking,
+        key,
+        undefined,
+      ) !== undefined,
+  );
+
+  useEffect(() => {
+    const normalizedBookingId = String(bookingId || '').trim();
+
+    if (
+      hasPaymentDetails ||
+      !normalizedBookingId ||
+      normalizedBookingId === '—' ||
+      requestedBookingId === normalizedBookingId
+    ) {
+      return undefined;
+    }
+
+    let active = true;
+    setRequestedBookingId(normalizedBookingId);
+
+    const fetchBookingDetails = async () => {
+      try {
+        const token =
+          (await AsyncStorage.getItem('authToken')) ||
+          (await AsyncStorage.getItem('token')) ||
+          (await AsyncStorage.getItem('access_token')) ||
+          (await AsyncStorage.getItem('userToken'));
+
+        if (!token) {
+          throw new Error('Authentication token not found.');
+        }
+
+        const response = await fetch(
+          `${BOOKING_DETAIL_API}/${encodeURIComponent(
+            normalizedBookingId,
+          )}`,
+          {
+            method: 'GET',
+            headers: {
+              Accept: 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+
+        const responseText = await response.text();
+        let result;
+
+        try {
+          result = JSON.parse(responseText);
+        } catch (error) {
+          throw new Error('Invalid booking detail response.');
+        }
+
+        if (!response.ok || result?.status === false) {
+          throw new Error(
+            result?.message ||
+              result?.error ||
+              'Unable to load booking details.',
+          );
+        }
+
+        console.log('DASHBOARD BOOKING DETAIL RESPONSE:', result);
+        console.log('UPDATED BASE PRICE FIELD:', result?.data?.bookingDetail?.detail_updated_base_price || result?.data?.booking_detail?.detail_updated_base_price || result?.data?.booking?.detail_updated_base_price || result?.bookingDetail?.detail_updated_base_price || result?.booking_detail?.detail_updated_base_price || result?.booking?.detail_updated_base_price || result?.detail_updated_base_price);
+
+        const detail =
+          result?.data?.bookingDetail ||
+          result?.data?.booking_detail ||
+          result?.data?.booking ||
+          result?.bookingDetail ||
+          result?.booking_detail ||
+          result?.booking ||
+          result?.data ||
+          result;
+
+        if (
+          !detail ||
+          typeof detail !== 'object' ||
+          Array.isArray(detail)
+        ) {
+          throw new Error('Booking details were not found.');
+        }
+
+        if (active) {
+          const property =
+            detail?.property ||
+            detail?.propertyData ||
+            detail?.propertyObject ||
+            routeBooking?.property ||
+            routeBooking?.propertyData ||
+            routeBooking?.propertyObject;
+
+          setBookingDetail({
+            ...routeBooking,
+            ...detail,
+            id:
+              detail?.id ||
+              detail?.booking_id ||
+              detail?.bookingId ||
+              normalizedBookingId,
+            bookingId:
+              detail?.bookingId ||
+              detail?.booking_id ||
+              normalizedBookingId,
+            booking_id:
+              detail?.booking_id ||
+              detail?.bookingId ||
+              normalizedBookingId,
+            property,
+            propertyData: property,
+            propertyObject: property,
+          });
+        }
+      } catch (error) {
+        console.log(
+          'DASHBOARD BOOKING DETAIL FETCH ERROR:',
+          error?.message || error,
+        );
+      }
+    };
+
+    fetchBookingDetails();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    bookingId,
+    hasPaymentDetails,
+    requestedBookingId,
+    routeBooking,
+  ]);
+
+  /* =======================================================
+     GUEST NAME
+  ======================================================= */
+
+  const customerFullName =
+    [
+      customer?.first_name,
+      customer?.last_name,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
 
   const guestName =
-    booking?.customerName ||
-    booking?.customer_name ||
-    booking?.guest_name ||
-    'kushal garg';
+    normalizeGuestName(
+      getBookingValue(
+        booking,
+        [
+          'customerName',
+          'customer_name',
+          'guest_name',
+          'guest',
+          'name',
+        ],
+        customerFullName ||
+          otaRoom?.guest_name ||
+          'Unknown Guest',
+      ),
+    );
 
-  const channel = booking?.channel || 'Airbnb';
-  const channelDisplay = booking?.channelDisplay || booking?.channel_display || 'Airbnb Content';
+  /* =======================================================
+     CHANNEL
+  ======================================================= */
+
+  const channel =
+    getBookingValue(
+      booking,
+      [
+        'channel',
+        'channel_name',
+        'channelName',
+      ],
+      otaReservation?.affiliation
+        ?.source ||
+        '—',
+    );
+
+  const channelDisplay =
+    getBookingValue(
+      booking,
+      [
+        'channelDisplay',
+        'channel_display',
+        'channelDisplayName',
+        'channel_display_name',
+      ],
+      channel,
+    );
+
+  /* =======================================================
+     CHANNEL REFERENCE
+  ======================================================= */
+
   const channelRefId =
-    booking?.channelRefId ||
-    booking?.channel_ref_id ||
-    booking?.channel_ref ||
-    'HMMBYJD9H4';
+    getBookingValue(
+      booking,
+      [
+        'channel_booking_id',
+        'booking_reference_id',
+        'bookingReferenceId',
+        'confirmation_id',
+      ],
+      otaReservation?.channel_booking_id ||
+        '—',
+    );
 
-  const status = booking?.status || 'Confirmed';
+  /* =======================================================
+     STATUS
+  ======================================================= */
 
-  const phone = booking?.phone || booking?.guest_phone || '+91 82238506688';
+  const status =
+    getBookingValue(
+      booking,
+      [
+        'property_booking_status',
+        'status',
+        'booking_status',
+      ],
+      'Confirmed',
+    );
+
+  /* =======================================================
+     PHONE
+  ======================================================= */
+
+  const phone =
+    customer?.mobile_number ||
+    customer?.mobile ||
+    customer?.phone ||
+    customer?.phone_number ||
+    getBookingValue(
+      booking,
+      [
+        'phone',
+        'guest_phone',
+        'customer_number',
+        'customer_phone',
+        'phone_number',
+        'mobile',
+        'mobile_number',
+        'guest_mobile',
+        'contact_number',
+        'customerMobile',
+      ],
+      otaReservation?.customer
+        ?.telephone ||
+        otaReservation?.customer
+          ?.phone ||
+        '—',
+    );
+
+  /* =======================================================
+     EMAIL
+  ======================================================= */
 
   const email =
-    booking?.email || booking?.guest_email || 'kushalgarg1729@gmail.com';
+    getBookingValue(
+      booking,
+      [
+        'email',
+        'guest_email',
+        'customer_email',
+        'email_address',
+      ],
+      customer?.email ||
+        otaReservation?.customer
+          ?.email ||
+        '—',
+    );
 
-  const adults = booking?.adults || booking?.adult_count || 9;
+  /* =======================================================
+     ADULT / CHILDREN
+  ======================================================= */
 
-  const children = booking?.children || booking?.child_count || 0;
+  const adults =
+    getBookingValue(
+      booking,
+      [
+        'adults',
+        'adult_count',
+        'no_of_adult',
+      ],
+      otaRoom?.numberofadults ||
+        0,
+    );
+
+  const children =
+    getBookingValue(
+      booking,
+      [
+        'children',
+        'child_count',
+        'no_of_children',
+      ],
+      otaRoom?.numberofchildren ||
+        0,
+    );
+
+  /* =======================================================
+     PROPERTY NAME
+  ======================================================= */
 
   const propertyName =
-    booking?.property_name ||
-    booking?.propertyName ||
-    'Sereno Ikigai 4bhk villa w/private pool & breakfast cook Assamgaon';
+    getTextValue(
+      booking?.final_unit_name ||
+        booking?.property?.final_unit_name ||
+        booking?.propertyData?.final_unit_name ||
+        booking?.propertyObject?.final_unit_name ||
+        booking?.home_property?.final_unit_name ||
+        booking?.home?.final_unit_name ||
+        '—',
+    );
 
-  const location = booking?.location || 'Assagaon, Goa';
+  /* =======================================================
+     LOCATION
+  ======================================================= */
+
+  const customerLocation =
+    parseJsonSafely(
+      booking?.customer_location_detail,
+    );
+
+  const location =
+    getBookingValue(
+      booking,
+      [
+        'location',
+        'location_name',
+        'city',
+        'property_location',
+      ],
+      customerLocation?.city ||
+        customerLocation?.location ||
+        booking?.property?.location ||
+        booking?.property?.home?.location ||
+        booking?.propertyData?.location ||
+        booking?.home?.location ||
+        booking?.location_name ||
+        otaReservation?.customer
+          ?.city ||
+        '—',
+    );
+
+  /* =======================================================
+     TAGS
+  ======================================================= */
+
+  const tags = useMemo(() => {
+    console.log(
+      '========== BOOKING DETAIL TAGS ==========',
+    );
+
+    console.log(
+      'BOOKING:',
+      booking,
+    );
+
+    console.log(
+      'BOOKING UNIT ID:',
+      booking?.unit_id,
+    );
+
+    console.log(
+      'BOOKING PROPERTY DATA:',
+      booking?.propertyData,
+    );
+
+    console.log(
+      'BOOKING PROPERTY OBJECT:',
+      booking?.propertyObject,
+    );
+
+    console.log(
+      'BOOKING PROPERTY DATA 2:',
+      booking?.property_data,
+    );
+
+    console.log(
+      'DIRECT BOOKING TAGS:',
+      booking?.tags,
+    );
+
+    const list = findTags(booking);
+
+    console.log(
+      'RESOLVED TAGS COUNT:',
+      Array.isArray(list)
+        ? list.length
+        : 0,
+    );
+
+    console.log(
+      'RESOLVED TAGS:',
+      list,
+    );
+ 
+    const filtered =
+      Array.isArray(list)
+        ? list.filter(item => {
+            if (
+              !item ||
+              typeof item !== 'object' ||
+              !getTagName(item)
+            ) {
+              return false;
+            }
+            if (
+              item?.status === undefined ||
+              item?.status === null ||
+              item?.status === ''
+            ) {
+              return true;
+            }
+
+            return Number(item?.status) === 1;
+          })
+        : [];
+
+    console.log(
+      'FINAL TAGS COUNT:',
+      filtered.length,
+    );
+
+    console.log(
+      'FINAL TAGS:',
+      filtered.map(item => ({
+        id: item?.id,
+        tags_id: item?.tags_id,
+        name: item?.name,
+        icon: item?.icon,
+        status: item?.status,
+      })),
+    );
+
+    console.log(
+      '==============================================',
+    );
+
+    return filtered;
+  }, [booking]);
+
+  /* =======================================================
+     ARRIVAL / DEPARTURE
+  ======================================================= */
+
+  const arrivalRaw =
+    getBookingValue(
+      booking,
+      [
+        'checkin_date',
+        'check_in_date',
+        'checkinDate',
+        'checkInDate',
+        'arrival_date',
+        'startDate',
+        'start_date',
+      ],
+      otaRoom?.arrival_date ||
+        '—',
+    );
+
+  const departureRaw =
+    getBookingValue(
+      booking,
+      [
+        'checkout_date',
+        'check_out_date',
+        'checkoutDate',
+        'checkOutDate',
+        'departure_date',
+        'endDate',
+        'end_date',
+      ],
+      otaRoom?.departure_date ||
+        '—',
+    );
 
   const arrivalDate =
-    booking?.checkin_date || booking?.startDate || '17 Sep 2026';
+    formatDisplayDate(
+      arrivalRaw,
+    );
 
   const departureDate =
-    booking?.checkout_date || booking?.endDate || '20 Sep 2026';
+    formatDisplayDate(
+      departureRaw,
+    );
 
-  const basePrice = '₹40,677.99';
-  const totalPayout = '₹47,999.99';
-  const guestTotal = '₹47,999.99';
-  const bookingReferenceId = booking?.channel_booking_id || booking?.booking_reference_id || '1789899679360';
-  const baseNightPrice = '₹8,881.11';
-  const gstAmount = '₹1600.20';
-  const guestTotalBreakdown = '₹10,481.31';
-  const paidAmount = '₹10,481.31';
-  const pendingAmount = '₹0.00';
+  const arrivalWeekday =
+    getWeekdayName(
+      arrivalRaw,
+    );
+
+  const departureWeekday =
+    getWeekdayName(
+      departureRaw,
+    );
+
+  /* =======================================================
+     NIGHT COUNT
+  ======================================================= */
+
+  const nightCount =
+    calculateNightCount(
+      arrivalRaw,
+      departureRaw,
+      booking?.no_of_nights,
+    );
+
+  const isQuotationChannel =
+    String(channel).trim().toLowerCase() === 'quotation';
+
+  const quotationSubtotalRaw =
+    booking?.detail_sub_total;
+
+  const quotationAddOnDiscountRaw =
+    booking?.detail_add_on_discount;
+
+  const quotationTotalRaw =
+    booking?.detail_total_amount;
+
+  /* =======================================================
+     FINANCIAL DATA
+  ======================================================= */
+
+  const basePriceValue = parseAmount(
+    booking?.base_price ??
+      booking?.basePrice ??
+      booking?.base_amount ??
+      booking?.room_price ??
+      booking?.subtotal ??
+      otaRoom?.totalbeforetax ??
+      otaRoom?.subtotal ??
+      otaRoom?.price?.[0]?.amount ??
+      0,
+  );
+
+  const updatedBasePriceRaw =
+    booking?.detail_updated_base_price ??
+    booking?.updated_base_price ??
+    booking?.updatedBasePrice ??
+    null;
+
+  const taxAmountValue =
+    parseAmount(
+      getBookingValue(
+        booking,
+        [
+          'tax_amount',
+          'gst_amount',
+          'gstAmount',
+          'tax',
+          'taxes',
+        ],
+        otaRoom?.tax ||
+          otaRoom?.taxes ||
+          otaRoom?.price?.[0]?.tax ||
+          0,
+      ),
+    );
+
+  const additionalCharges =
+    parseAdditionalCharges(
+      booking?.detail_new_additional_charges,
+    );
+
+  const extraGuestChargeRaw =
+    getNestedBookingValue(
+      booking,
+      'extra_guest_charge',
+      undefined,
+    );
+
+  const hasExtraGuestCharge =
+    extraGuestChargeRaw !== undefined &&
+    extraGuestChargeRaw !== null &&
+    extraGuestChargeRaw !== '';
+
+  const extraGuestChargeValue =
+    parseAmount(extraGuestChargeRaw);
+
+  const discountDetails =
+    parseJsonSafely(
+      booking?.detail_discount_amount,
+    );
+
+  const discountAmountRaw =
+    discountDetails &&
+    typeof discountDetails === 'object'
+      ? discountDetails?.amount
+      : discountDetails;
+
+  const hasDiscountAmount =
+    discountAmountRaw !== undefined &&
+    discountAmountRaw !== null &&
+    discountAmountRaw !== '';
+
+  const discountAmountValue =
+    parseAmount(discountAmountRaw);
+
+  const discountCouponCode =
+    discountDetails?.coupon_code ||
+    booking?.applied_discount_coupon ||
+    '';
+
+  const appliedCreditRaw =
+    getNestedBookingValue(
+      booking,
+      'apply_credit_amount',
+      undefined,
+    );
+
+  const convenienceFeeRaw =
+    getNestedBookingValue(
+      booking,
+      'convenience_fee',
+      undefined,
+    );
+
+  const convenienceTaxRaw =
+    getNestedBookingValue(
+      booking,
+      'convenience_tax',
+      undefined,
+    );
+
+  const totalBeforeTaxRaw =
+    getNestedBookingValue(
+      booking,
+      'totalbeforetax',
+      undefined,
+    );
+
+  const showConvenienceFee =
+    parseAmount(convenienceFeeRaw) > 0;
+
+  const hasAppliedCredit =
+    appliedCreditRaw !== undefined &&
+    appliedCreditRaw !== null &&
+    appliedCreditRaw !== '';
+
+  const appliedCreditValue =
+    parseAmount(appliedCreditRaw);
+
+  const guestTotalValue =
+    parseAmount(
+      getNestedBookingValue(
+        booking,
+        'guest_total_payable_amount',
+        0,
+      ),
+    );
+
+  const paidAmountValue =
+    parseAmount(
+      getNestedBookingValue(
+        booking,
+        'detail_paid_amount',
+        0,
+      ),
+    );
+
+  /* =======================================================
+     PENDING
+  ======================================================= */
+
+  const pendingAmountValue =
+    parseAmount(
+      getNestedBookingValue(
+        booking,
+        'detail_pending_amount',
+        0,
+      ),
+    );
+
+  /* =======================================================
+     PAYOUT
+  ======================================================= */
+
+  const totalPayoutValue =
+    parseAmount(
+      getNestedBookingValue(
+        booking,
+        'payable_amount',
+        0,
+      ),
+    );
+
+  /* =======================================================
+     PRICE BREAKDOWN
+  ======================================================= */
+
+  const baseNightPriceValue =
+    parseAmount(
+      updatedBasePriceRaw ??
+        booking?.base_price ??
+        booking?.basePrice ??
+        basePriceValue,
+    );
+
+  const guestTotalBreakdownValue =
+    guestTotalValue;
+
+  const basePrice =
+    formatCurrency(
+      basePriceValue,
+    );
+
+  const totalPayout =
+    formatCurrency(
+      totalPayoutValue,
+    );
+
+  const guestTotal =
+    formatCurrency(
+      guestTotalValue,
+    );
+
+  const baseNightPrice =
+    formatCurrency(
+      baseNightPriceValue,
+    );
+
+  const gstAmount =
+    formatCurrency(
+      taxAmountValue,
+    );
+
+  const guestTotalBreakdown =
+    formatCurrency(
+      guestTotalBreakdownValue,
+    );
+
+  const paidAmount =
+    formatCurrency(
+      paidAmountValue,
+    );
+
+  const pendingAmount =
+    formatCurrency(
+      pendingAmountValue,
+    );
+
+  /* =======================================================
+     CREATED DATE
+  ======================================================= */
+
+  const createdRaw =
+    getBookingValue(
+      booking,
+      [
+        'created_at',
+        'createdAt',
+        'reservation_created_at',
+      ],
+      otaReservation?.processed_at ||
+        otaReservation?.booked_at ||
+        '—',
+    );
+
+  const createdAt =
+    formatCreatedDate(
+      createdRaw,
+    );
+
+  /* =======================================================
+     BOOKING REFERENCE
+  ======================================================= */
+
+  const bookingReferenceId =
+    getBookingValue(
+      booking,
+      [
+        'channel_booking_id',
+        'booking_reference_id',
+        'bookingReferenceId',
+        'confirmation_id',
+      ],
+      otaReservation?.channel_booking_id ||
+        bookingId,
+    );
+
+  /* =======================================================
+     BOOKING NOTES
+  ======================================================= */
+
+  const bookingNotes =
+    getBookingValue(
+      booking,
+      [
+        'booking_notes',
+        'bookingNotes',
+        'notes',
+        'note',
+        'remarks',
+        'special_requests',
+        'specialRequests',
+        'guest_notes',
+        'customer_notes',
+        'comment',
+      ],
+      otaReservation
+        ?.customer
+        ?.remarks ||
+        otaReservation?.remarks ||
+        otaReservation?.notes ||
+        '',
+    );
+
+  /* =======================================================
+     AVATAR INITIALS
+  ======================================================= */
+
+  const avatarText =
+    guestName
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 2)
+      .map(name =>
+        name.charAt(0),
+      )
+      .join('')
+      .toUpperCase() || 'GU';
+
+  /* =======================================================
+     RENDER
+  ======================================================= */
 
   return (
     <View style={styles.safeArea}>
-      {/* STATUS BAR */}
       <StatusBar
         barStyle="dark-content"
         backgroundColor="#F6F8F7"
         translucent={false}
       />
- 
+
       <View style={styles.container}>
         <PageHeader
-          navigation={navigation}
+          navigation={
+            embedded
+              ? {
+                  canGoBack: () => true,
+                  goBack: onClose,
+                }
+              : navigation
+          }
           title={String(bookingId)}
         />
 
         <ScrollView
           showsVerticalScrollIndicator={false}
-          bounces={true}
+          bounces
           contentContainerStyle={[
             styles.scrollContent,
             {
-              paddingBottom: insets.bottom + hp(6),
+              paddingBottom:
+                insets.bottom +
+                hp(6),
             },
           ]}
         >
-          {/* ================= RESERVATION ================= */}
+          {/* =================================================
+              RESERVATION
+          ================================================= */}
 
-          <Text style={styles.sectionLabel}>RESERVATION</Text>
+          <Text style={styles.sectionLabel}>
+            RESERVATION
+          </Text>
 
           <View style={styles.titleRow}>
-            <Text style={styles.bookingTitle} numberOfLines={2}>
-              Booking details
+            <Text
+              style={styles.bookingTitle}
+              numberOfLines={2}
+            >
+              Booking {bookingId}
             </Text>
 
             <View style={styles.confirmedBadge}>
-              <View style={styles.statusDot} />
+              <View
+                style={styles.statusDot}
+              />
 
-              <Text style={styles.confirmedText}>{status}</Text>
+              <Text
+                style={
+                  styles.confirmedText
+                }
+              >
+                {status}
+              </Text>
             </View>
           </View>
 
           <Text style={styles.createdText}>
-            Created 13 Sep 2026, 10:46 PM · {channel} Reservation System
+            {createdAt !== '—'
+              ? `Created ${createdAt} · ${channelDisplay}`
+              : channelDisplay}
           </Text>
 
-          {/* ================= PRICE CARDS ================= */}
+          {/* =================================================
+              PRICE CARDS
+          ================================================= */}
 
           <ScrollView
             horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.summaryGrid}
+            showsHorizontalScrollIndicator={
+              false
+            }
+            contentContainerStyle={
+              styles.summaryGrid
+            }
           >
-            <PriceCard title="BASE PRICE" value={basePrice} />
+            <PriceCard
+              title="BASE PRICE"
+              value={basePrice}
+            />
 
-            <PriceCard title="TOTAL PAYOUT" value={totalPayout} />
+            <PriceCard
+              title="TOTAL PAYOUT"
+              value={totalPayout}
+            />
 
-            <PriceCard title="GUEST TOTAL" value={guestTotal} />
+            <PriceCard
+              title="GUEST TOTAL"
+              value={guestTotal}
+            />
+
+            <PriceCard
+              title="PAID"
+              value={paidAmount}
+              valueStyle={
+                styles.paidCardValue
+              }
+            />
+
+            <PriceCard
+              title="PENDING"
+              value={pendingAmount}
+              valueStyle={
+                styles.pendingCardValue
+              }
+            />
           </ScrollView>
 
-          {/* ================= GUEST DETAILS ================= */}
+          {/* =================================================
+              GUEST DETAILS
+          ================================================= */}
 
           <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardHeaderIcon}>{'◔'}</Text>
+            <View
+              style={styles.cardHeader}
+            >
+              <Text
+                style={
+                  styles.cardHeaderIcon
+                }
+              >
+                ◔
+              </Text>
 
-              <Text style={styles.cardHeaderTitle}>GUEST DETAILS</Text>
+              <Text
+                style={
+                  styles.cardHeaderTitle
+                }
+              >
+                GUEST DETAILS
+              </Text>
             </View>
 
             <View style={styles.cardBody}>
               <View style={styles.guestRow}>
                 <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>KG</Text>
+                  <Text
+                    style={
+                      styles.avatarText
+                    }
+                  >
+                    {avatarText}
+                  </Text>
                 </View>
 
-                <View style={styles.guestInfo}>
-                  <Text style={styles.guestName} numberOfLines={1}>
+                <View
+                  style={
+                    styles.guestInfo
+                  }
+                >
+                  <Text
+                    style={
+                      styles.guestName
+                    }
+                    numberOfLines={2}
+                  >
                     {guestName}
                   </Text>
 
-                  <Text style={styles.primaryGuest}>Primary guest</Text>
+                  <Text
+                    style={
+                      styles.primaryGuest
+                    }
+                  >
+                    Primary guest
+                  </Text>
                 </View>
               </View>
 
-              <View style={styles.horizontalLine} />
+              <View
+                style={
+                  styles.horizontalLine
+                }
+              />
 
-              <View style={styles.rowBlock}>
-                <Label>PHONE</Label>
+              <View
+                style={styles.rowBlock}
+              >
+                <Label>
+                  PHONE
+                </Label>
 
-                <Text style={styles.detailValue}>{phone}</Text>
+                <Text
+                  style={
+                    styles.detailValue
+                  }
+                >
+                  {phone}
+                </Text>
               </View>
 
-              <View style={styles.rowBlock}>
-                <Label>EMAIL</Label>
+              <View
+                style={styles.rowBlock}
+              >
+                <Label>
+                  EMAIL
+                </Label>
 
-                <Text style={styles.detailValue} numberOfLines={2}>
+                <Text
+                  style={
+                    styles.detailValue
+                  }
+                  numberOfLines={2}
+                >
                   {email}
                 </Text>
               </View>
 
-              <View style={styles.twoColumnRow}>
-                <View style={styles.halfColumn}>
-                  <Label>ADULTS</Label>
+              <View
+                style={
+                  styles.twoColumnRow
+                }
+              >
+                <View
+                  style={
+                    styles.halfColumn
+                  }
+                >
+                  <Label>
+                    ADULTS
+                  </Label>
 
-                  <Text style={styles.detailValue}>{adults}</Text>
+                  <Text
+                    style={
+                      styles.detailValue
+                    }
+                  >
+                    {adults}
+                  </Text>
                 </View>
 
-                <View style={styles.halfColumn}>
-                  <Label>CHILDREN</Label>
+                <View
+                  style={
+                    styles.halfColumn
+                  }
+                >
+                  <Label>
+                    CHILDREN
+                  </Label>
 
-                  <Text style={styles.detailValue}>{children}</Text>
+                  <Text
+                    style={
+                      styles.detailValue
+                    }
+                  >
+                    {children}
+                  </Text>
                 </View>
               </View>
             </View>
           </View>
 
-          {/* ================= STAY DETAILS ================= */}
+          {/* =================================================
+              STAY DETAILS
+          ================================================= */}
 
           <View style={styles.stayCard}>
-            {/* HEADER */}
-            <View style={styles.stayHeader}>
-              <View style={styles.stayHeaderLeft}>
-                <View style={styles.stayHeaderIcon}>
-                  <Text style={styles.stayHeaderIconText}>🏠</Text>
+            <View
+              style={styles.stayHeader}
+            >
+              <View
+                style={
+                  styles.stayHeaderLeft
+                }
+              >
+                <View
+                  style={
+                    styles.stayHeaderIcon
+                  }
+                >
+                  <Text
+                    style={
+                      styles.stayHeaderIconText
+                    }
+                  >
+                    🏠
+                  </Text>
                 </View>
 
                 <View>
-                  <Text style={styles.stayHeaderTitle}>STAY DETAILS</Text>
+                  <Text
+                    style={
+                      styles.stayHeaderTitle
+                    }
+                  >
+                    STAY DETAILS
+                  </Text>
 
-                  <Text style={styles.stayHeaderSubtitle}>
+                  <Text
+                    style={
+                      styles.stayHeaderSubtitle
+                    }
+                  >
                     Your reservation stay
                   </Text>
                 </View>
               </View>
 
-              <View style={styles.nightBadgeNew}>
-                <Text style={styles.nightNumber}>3</Text>
+              <View
+                style={
+                  styles.nightBadgeNew
+                }
+              >
+                <Text
+                  style={
+                    styles.nightNumber
+                  }
+                >
+                  {nightCount}
+                </Text>
 
-                <Text style={styles.nightLabel}>NIGHTS</Text>
+                <Text
+                  style={
+                    styles.nightLabel
+                  }
+                >
+                  NIGHTS
+                </Text>
               </View>
             </View>
 
-            {/* DATE SECTION */}
-            <View style={styles.stayDateSection}>
-              {/* ARRIVAL */}
-              <View style={styles.stayDateCard}>
-                <View style={styles.dateTopRow}>
-                  <View style={styles.dateIconCircle}>
-                    <Text style={styles.dateIconText}>📅</Text>
+            {/* DATE */}
+
+            <View
+              style={
+                styles.stayDateSection
+              }
+            >
+              <View
+                style={
+                  styles.stayDateCard
+                }
+              >
+                <View
+                  style={
+                    styles.dateTopRow
+                  }
+                >
+                  <View
+                    style={
+                      styles.dateIconCircle
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.dateIconText
+                      }
+                    >
+                      📅
+                    </Text>
                   </View>
 
-                  <Text style={styles.dateType}>ARRIVAL</Text>
+                  <Text
+                    style={
+                      styles.dateType
+                    }
+                  >
+                    ARRIVAL
+                  </Text>
                 </View>
 
-                <Text style={styles.stayDateValue}>{arrivalDate}</Text>
+                <Text
+                  style={
+                    styles.stayDateValue
+                  }
+                >
+                  {arrivalDate}
+                </Text>
 
-                <Text style={styles.stayWeekday}>Thursday</Text>
+                <Text
+                  style={
+                    styles.stayWeekday
+                  }
+                >
+                  {arrivalWeekday}
+                </Text>
               </View>
 
-              {/* CONNECTOR */}
-              <View style={styles.stayConnector}>
-                <View style={styles.connectorLine} />
+              <View
+                style={
+                  styles.stayConnector
+                }
+              >
+                <View
+                  style={
+                    styles.connectorLine
+                  }
+                />
 
-                <View style={styles.connectorCircle}>
-                  <Text style={styles.connectorArrow}>{'➜'}</Text>
+                <View
+                  style={
+                    styles.connectorCircle
+                  }
+                >
+                  <Text
+                    style={
+                      styles.connectorArrow
+                    }
+                  >
+                    ➜
+                  </Text>
                 </View>
 
-                <View style={styles.connectorLine} />
+                <View
+                  style={
+                    styles.connectorLine
+                  }
+                />
               </View>
 
-              {/* DEPARTURE */}
-              <View style={styles.stayDateCard}>
-                <View style={styles.dateTopRow}>
-                  <View style={styles.dateIconCircle}>
-                    <Text style={styles.dateIconText}>🗓</Text>
+              <View
+                style={
+                  styles.stayDateCard
+                }
+              >
+                <View
+                  style={
+                    styles.dateTopRow
+                  }
+                >
+                  <View
+                    style={
+                      styles.dateIconCircle
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.dateIconText
+                      }
+                    >
+                      🗓
+                    </Text>
                   </View>
 
-                  <Text style={styles.dateType}>DEPARTURE</Text>
+                  <Text
+                    style={
+                      styles.dateType
+                    }
+                  >
+                    DEPARTURE
+                  </Text>
                 </View>
 
-                <Text style={styles.stayDateValue}>{departureDate}</Text>
+                <Text
+                  style={
+                    styles.stayDateValue
+                  }
+                >
+                  {departureDate}
+                </Text>
 
-                <Text style={styles.stayWeekday}>Sunday</Text>
+                <Text
+                  style={
+                    styles.stayWeekday
+                  }
+                >
+                  {departureWeekday}
+                </Text>
               </View>
             </View>
 
             {/* PROPERTY */}
-            <View style={styles.propertySection}>
-              <View style={styles.propertyIconBox}>
-                <Text style={styles.propertyIcon}>📍</Text>
+
+            <View
+              style={
+                styles.propertySection
+              }
+            >
+              <View
+                style={
+                  styles.propertyIconBox
+                }
+              >
+                <Text
+                  style={
+                    styles.propertyIcon
+                  }
+                >
+                  📍
+                </Text>
               </View>
 
-              <View style={styles.propertyInfo}>
-                <Text style={styles.propertyTitleNew} numberOfLines={3}>
+              <View
+                style={
+                  styles.propertyInfo
+                }
+              >
+                <Text
+                  style={
+                    styles.propertyTitleNew
+                  }
+                  numberOfLines={3}
+                >
                   {propertyName}
                 </Text>
 
-                <View style={styles.locationRow}>
-                  <Text style={styles.locationPin}>●</Text>
+                <View
+                  style={
+                    styles.locationRow
+                  }
+                >
+                  <Text
+                    style={
+                      styles.locationPin
+                    }
+                  >
+                    ●
+                  </Text>
 
-                  <Text style={styles.propertyLocationNew} numberOfLines={1}>
+                  <Text
+                    style={
+                      styles.propertyLocationNew
+                    }
+                    numberOfLines={1}
+                  >
                     {location}
                   </Text>
                 </View>
+
+                {tags.length > 0 && (
+                  <View style={styles.propertyTagsRow}>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={
+                        styles.tagsScrollContent
+                      }
+                    >
+                      {tags.map((item, index) => {
+                        const iconPath = item?.icon
+                          ? item.icon.startsWith('http')
+                            ? item.icon
+                            : `https://staysereno.in/storage/${item.icon.replace(
+                                /^\/+/, '',
+                              )}`
+                          : null;
+
+                        return (
+                          <View
+                            key={`${item?.id || item?.tags_id || index}`}
+                            style={styles.tagCard}
+                          >
+                            <View style={styles.tagIconBox}>
+                              {iconPath ? (
+                                <Image
+                                  source={{uri: iconPath}}
+                                  style={styles.tagIcon}
+                                  resizeMode="contain"
+                                />
+                              ) : (
+                                <Text style={styles.tagFallbackIcon}>
+                                  ✓
+                                </Text>
+                              )}
+                            </View>
+
+                            <Text
+                              style={styles.tagName}
+                              numberOfLines={1}
+                            >
+                              {getTagName(item) || 'Tag'}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                )}
               </View>
             </View>
 
-            {/* AMENITIES */}
-            <View style={styles.amenitiesSection}>
-              <Text style={styles.amenitiesTitle}>PROPERTY FEATURES</Text>
+            {/* META */}
 
-              <View style={styles.pillRowNew}>
-                <View style={styles.amenityPill}>
-                  <Text style={styles.amenityIcon}>✓</Text>
+            <View
+              style={
+                styles.metaSection
+              }
+            >
+              <View
+                style={
+                  styles.metaRow
+                }
+              >
+                <Text
+                  style={
+                    styles.metaLabel
+                  }
+                >
+                  CHANNEL
+                </Text>
 
-                  <Text style={styles.amenityText}>Private Pool</Text>
-                </View>
-
-                <View style={styles.amenityPill}>
-                  <Text style={styles.amenityIcon}>✦</Text>
-
-                  <Text style={styles.amenityText}>Private Rooftop</Text>
-                </View>
-
-                <View style={styles.amenityPill}>
-                  <Text style={styles.amenityIcon}>▣</Text>
-
-                  <Text style={styles.amenityText}>Villa</Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.metaSection}>
-              <View style={styles.metaRow}>
-                <Text style={styles.metaLabel}>CHANNEL</Text>
-                <Text style={styles.metaValue}>{channelDisplay}</Text>
-              </View>
-
-              <View style={styles.metaRow}>
-                <Text style={styles.metaLabel}>BOOKING ID</Text>
-                <Text style={styles.metaValue}>{bookingReferenceId}</Text>
+                <Text
+                  style={
+                    styles.metaValue
+                  }
+                  numberOfLines={2}
+                >
+                  {channelDisplay}
+                </Text>
               </View>
 
-              <View style={styles.metaRow}>
-                <Text style={styles.metaLabel}>CHANNEL REF ID</Text>
-                <Text style={styles.metaValue}>{channelRefId}</Text>
+              <View
+                style={
+                  styles.metaRow
+                }
+              >
+                <Text
+                  style={
+                    styles.metaLabel
+                  }
+                >
+                  BOOKING ID
+                </Text>
+
+                <Text
+                  style={
+                    styles.metaValue
+                  }
+                  numberOfLines={2}
+                >
+                  {bookingId}
+                </Text>
+              </View>
+
+              <View
+                style={
+                  styles.metaRow
+                }
+              >
+                <Text
+                  style={
+                    styles.metaLabel
+                  }
+                >
+                  CHANNEL REF ID
+                </Text>
+
+                <Text
+                  style={
+                    styles.metaValue
+                  }
+                  numberOfLines={2}
+                >
+                  {channelRefId}
+                </Text>
               </View>
             </View>
           </View>
 
-          <View style={styles.priceBreakdownCard}>
-            <View style={styles.breakdownHeader}>
-              <View style={styles.breakdownIconWrap}>
-                <Text style={styles.breakdownIcon}>▣</Text>
+          {/* =================================================
+              PRICE BREAKDOWN
+          ================================================= */}
+
+          <View
+            style={
+              styles.priceBreakdownCard
+            }
+          >
+            <View
+              style={
+                styles.breakdownHeader
+              }
+            >
+              <View
+                style={
+                  styles.breakdownIconWrap
+                }
+              >
+                <Text
+                  style={
+                    styles.breakdownIcon
+                  }
+                >
+                  ▣
+                </Text>
               </View>
-              <Text style={styles.breakdownTitle}>PRICE BREAKDOWN</Text>
+
+              <Text
+                style={
+                  styles.breakdownTitle
+                }
+              >
+                PRICE BREAKDOWN
+              </Text>
             </View>
 
-            <View style={styles.breakdownRows}>
-              <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>Base price (1 night)</Text>
-                <Text style={styles.breakdownValue}>{baseNightPrice}</Text>
+            <View
+              style={
+                styles.breakdownRows
+              }
+            >
+              <View
+                style={
+                  styles.breakdownRow
+                }
+              >
+                <Text
+                  style={
+                    styles.breakdownLabel
+                  }
+                >
+                  Base price (
+                  {nightCount || 1}{' '}
+                  {nightCount === 1
+                    ? 'night'
+                    : 'nights'}
+                  )
+                </Text>
+
+                <Text
+                  style={
+                    styles.breakdownValue
+                  }
+                >
+                  {baseNightPrice}
+                </Text>
               </View>
 
-              <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>GST Amount</Text>
-                <Text style={styles.breakdownValue}>{gstAmount}</Text>
-              </View>
+              {updatedBasePriceRaw !== undefined &&
+                updatedBasePriceRaw !== null &&
+                updatedBasePriceRaw !== '' && (
+                  <View style={styles.breakdownRow}>
+                    <Text style={styles.breakdownLabel}>
+                      Updated base price
+                    </Text>
 
-              <View style={[styles.breakdownRow, styles.breakdownTotalRow]}>
-                <Text style={styles.breakdownTotalLabel}>Guest Total</Text>
-                <Text style={styles.breakdownTotalValue}>{guestTotalBreakdown}</Text>
-              </View>
+                    <Text style={styles.breakdownValue}>
+                      {formatCurrency(updatedBasePriceRaw)}
+                    </Text>
+                  </View>
+                )}
 
-              <View style={styles.breakdownRow}>
-                <View style={styles.paidRow}>
-                  <Text style={styles.paidCheck}>✓</Text>
-                  <Text style={styles.breakdownLabel}>Paid</Text>
+              {isQuotationChannel && (
+                <>
+                  {quotationSubtotalRaw !== undefined &&
+                    quotationSubtotalRaw !== null &&
+                    quotationSubtotalRaw !== '' && (
+                      <View style={styles.breakdownRow}>
+                        <Text style={styles.breakdownLabel}>Sub Total</Text>
+                        <Text style={styles.breakdownValue}>
+                          {formatCurrency(quotationSubtotalRaw)}
+                        </Text>
+                      </View>
+                    )}
+
+                  {quotationAddOnDiscountRaw !== undefined &&
+                    quotationAddOnDiscountRaw !== null &&
+                    quotationAddOnDiscountRaw !== '' && (
+                      <View style={styles.breakdownRow}>
+                        <Text style={styles.breakdownLabel}>Add-on Discount</Text>
+                        <Text style={styles.breakdownValue}>
+                          {formatCurrency(-Math.abs(parseAmount(quotationAddOnDiscountRaw)))}
+                        </Text>
+                      </View>
+                    )}
+
+                  {quotationTotalRaw !== undefined &&
+                    quotationTotalRaw !== null &&
+                    quotationTotalRaw !== '' && (
+                      <View style={[styles.breakdownRow, styles.breakdownTotalRow]}>
+                        <Text style={styles.breakdownTotalLabel}>Total Amount</Text>
+                        <Text style={styles.breakdownTotalValue}>
+                          {formatCurrency(quotationTotalRaw)}
+                        </Text>
+                      </View>
+                    )}
+                </>
+              )}
+
+              {hasExtraGuestCharge && (
+                <View style={styles.breakdownRow}>
+                  <Text style={styles.breakdownLabel}>
+                    Extra guest charge
+                  </Text>
+                  <Text style={styles.breakdownValue}>
+                    {formatCurrency(extraGuestChargeValue)}
+                  </Text>
                 </View>
-                <Text style={styles.paidValue}>{paidAmount}</Text>
+              )}
+
+              {additionalCharges.map((charge, index) => {
+                const amount =
+                  getAdditionalChargeAmount(charge);
+
+                return (
+                  <View
+                    key={
+                      charge?.id ??
+                      charge?.additional_charge_id ??
+                      `${index}-${getAdditionalChargeLabel(charge, index)}`
+                    }
+                    style={styles.breakdownRow}>
+                    <Text style={styles.breakdownLabel}>
+                      {getAdditionalChargeLabel(charge, index)}
+                    </Text>
+
+                    <Text style={styles.breakdownValue}>
+                      {amount === undefined || amount === null || amount === ''
+                        ? '—'
+                        : formatCurrency(parseAmount(amount))}
+                    </Text>
+                  </View>
+                );
+              })}
+
+              {hasDiscountAmount && (
+                <View style={styles.breakdownRow}>
+                  <Text style={styles.breakdownLabel}>
+                    {discountCouponCode
+                      ? `Discount (${discountCouponCode})`
+                      : 'Discount'}
+                  </Text>
+                  <Text style={styles.breakdownValue}>
+                    {formatCurrency(-discountAmountValue)}
+                  </Text>
+                </View>
+              )}
+
+              {hasAppliedCredit && (
+                <View style={styles.breakdownRow}>
+                  <Text style={styles.breakdownLabel}>
+                    Applied credit
+                  </Text>
+                  <Text style={styles.breakdownValue}>
+                    {formatCurrency(-appliedCreditValue)}
+                  </Text>
+                </View>
+              )}
+
+              {showConvenienceFee && (
+                <>
+                  <View style={styles.breakdownRow}>
+                    <Text style={styles.breakdownLabel}>
+                      Convenience Fee {convenienceTaxRaw ?? ''}%
+                    </Text>
+                    <Text style={styles.breakdownValue}>
+                      {formatCurrency(convenienceFeeRaw)}
+                    </Text>
+                  </View>
+
+                  {totalBeforeTaxRaw !== undefined &&
+                    totalBeforeTaxRaw !== null &&
+                    totalBeforeTaxRaw !== '' && (
+                      <View style={styles.breakdownRow}>
+                        <Text style={styles.breakdownLabel}>Total</Text>
+                        <Text style={styles.breakdownValue}>
+                          {formatCurrency(totalBeforeTaxRaw)}
+                        </Text>
+                      </View>
+                    )}
+                </>
+              )}
+
+              <View
+                style={
+                  styles.breakdownRow
+                }
+              >
+                <Text
+                  style={
+                    styles.breakdownLabel
+                  }
+                >
+                  GST Amount
+                </Text>
+
+                <Text
+                  style={
+                    styles.breakdownValue
+                  }
+                >
+                  {gstAmount}
+                </Text>
               </View>
 
-              <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>Pending</Text>
-                <Text style={styles.pendingValue}>{pendingAmount}</Text>
+              <View
+                style={[
+                  styles.breakdownRow,
+                  styles.breakdownTotalRow,
+                ]}
+              >
+                <Text
+                  style={
+                    styles.breakdownTotalLabel
+                  }
+                >
+                  Guest Total
+                </Text>
+
+                <Text
+                  style={
+                    styles.breakdownTotalValue
+                  }
+                >
+                  {guestTotalBreakdown}
+                </Text>
+              </View>
+
+              <View
+                style={
+                  styles.breakdownRow
+                }
+              >
+                <View
+                  style={
+                    styles.paidRow
+                  }
+                >
+                  <Text
+                    style={
+                      styles.paidCheck
+                    }
+                  >
+                    ✓
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.breakdownLabel
+                    }
+                  >
+                    Paid
+                  </Text>
+                </View>
+
+                <Text
+                  style={
+                    styles.paidValue
+                  }
+                >
+                  {paidAmount}
+                </Text>
+              </View>
+
+              <View
+                style={[
+                  styles.breakdownRow,
+                  styles.lastBreakdownRow,
+                ]}
+              >
+                <Text
+                  style={
+                    styles.breakdownLabel
+                  }
+                >
+                  Pending
+                </Text>
+
+                <Text
+                  style={
+                    styles.pendingValue
+                  }
+                >
+                  {pendingAmount}
+                </Text>
               </View>
             </View>
           </View>
+
+          {/* =================================================
+              BOOKING NOTES
+          ================================================= */}
+
+          {!!bookingNotes && (
+            <View
+              style={
+                styles.notesCard
+              }
+            >
+              <View
+                style={
+                  styles.notesHeader
+                }
+              >
+                <Text
+                  style={
+                    styles.notesIcon
+                  }
+                >
+                  ✦
+                </Text>
+
+                <Text
+                  style={
+                    styles.notesTitle
+                  }
+                >
+                  BOOKING NOTES
+                </Text>
+              </View>
+
+              <Text
+                style={
+                  styles.notesText
+                }
+              >
+                {bookingNotes}
+              </Text>
+            </View>
+          )}
         </ScrollView>
       </View>
     </View>
@@ -378,6 +2632,10 @@ const BookingDetail = ({ navigation, route }) => {
 };
 
 export default BookingDetail;
+
+/* =========================================================
+   STYLES
+========================================================= */
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -390,19 +2648,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#F6F8F7',
   },
 
-  /*
-   * IMPORTANT:
-   * Top padding ab inline contentContainerStyle se
-   * insets.top ke according aa rahi hai.
-   */
   scrollContent: {
     paddingHorizontal: wp(4),
   },
 
+  /* =======================================================
+     RESERVATION
+  ======================================================= */
+
   sectionLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.7,
     color: '#5F7D72',
     marginBottom: hp(1.2),
   },
@@ -411,12 +2668,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: hp(1),
+    marginBottom: hp(0.8),
   },
 
   bookingTitle: {
     flex: 1,
-    fontSize: 26,
+    fontSize: 25,
     fontWeight: '800',
     color: '#1D2F2B',
     marginRight: 10,
@@ -427,61 +2684,79 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#DFF7EC',
     borderRadius: 20,
-    paddingHorizontal: 12,
+    paddingHorizontal: 11,
     paddingVertical: 6,
   },
 
   statusDot: {
-    width: 8,
-    height: 8,
+    width: 7,
+    height: 7,
     borderRadius: 4,
     backgroundColor: '#1DBA78',
     marginRight: 6,
   },
 
   confirmedText: {
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 11,
+    fontWeight: '800',
     color: '#0D8C5A',
   },
 
   createdText: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#6E8A81',
-    marginBottom: hp(2.4),
+    marginBottom: hp(2.2),
   },
+
+  /* =======================================================
+     PRICE CARDS
+  ======================================================= */
 
   summaryGrid: {
     paddingBottom: hp(1),
-    marginBottom: hp(3),
+    marginBottom: hp(2.5),
     flexDirection: 'row',
     alignItems: 'stretch',
   },
 
   priceCard: {
     width: width * 0.34,
-    backgroundColor: '#F2F5F4',
+    minHeight: 76,
+    backgroundColor: '#FFFFFF',
     borderRadius: 14,
-    paddingHorizontal: 14,
+    paddingHorizontal: 13,
     paddingVertical: 12,
     marginRight: 8,
     borderWidth: 1,
     borderColor: '#D7E5E1',
+    justifyContent: 'center',
   },
 
   priceCardTitle: {
-    fontSize: 10,
-    fontWeight: '700',
+    fontSize: 9,
+    fontWeight: '800',
     color: '#6E8E86',
-    letterSpacing: 0.4,
-    marginBottom: 8,
+    letterSpacing: 0.5,
+    marginBottom: 7,
   },
 
   priceCardValue: {
     fontSize: 17,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#1D2E2A',
   },
+
+  paidCardValue: {
+    color: '#17B978',
+  },
+
+  pendingCardValue: {
+    color: '#D94E4E',
+  },
+
+  /* =======================================================
+     COMMON CARD
+  ======================================================= */
 
   card: {
     borderRadius: 16,
@@ -509,16 +2784,20 @@ const styles = StyleSheet.create({
   },
 
   cardHeaderTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.4,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
     color: '#4E7F71',
   },
 
   cardBody: {
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 15,
   },
+
+  /* =======================================================
+     GUEST
+  ======================================================= */
 
   guestRow: {
     flexDirection: 'row',
@@ -526,10 +2805,10 @@ const styles = StyleSheet.create({
   },
 
   avatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#1DBA78',
+    width: 43,
+    height: 43,
+    borderRadius: 22,
+    backgroundColor: '#17B978',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -546,142 +2825,55 @@ const styles = StyleSheet.create({
   },
 
   guestName: {
-    fontSize: 22,
-    fontWeight: '700',
+    fontSize: 19,
+    fontWeight: '800',
     color: '#1E2E2B',
     textTransform: 'capitalize',
   },
 
   primaryGuest: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#6E8A81',
-    marginTop: 2,
+    marginTop: 3,
   },
 
   horizontalLine: {
     height: 1,
     backgroundColor: '#E8EFEA',
-    marginVertical: 14,
+    marginVertical: 15,
   },
 
   rowBlock: {
-    marginBottom: 12,
+    marginBottom: 13,
   },
 
   smallLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.4,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
     color: '#6E8E86',
-    marginBottom: 6,
+    marginBottom: 5,
     textTransform: 'uppercase',
   },
 
   detailValue: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#243632',
     fontWeight: '600',
   },
 
   twoColumnRow: {
     flexDirection: 'row',
-    marginTop: 6,
+    marginTop: 3,
   },
 
   halfColumn: {
     flex: 1,
   },
 
-  nightBadge: {
-    marginLeft: 'auto',
-    backgroundColor: '#1DBA78',
-    borderRadius: 16,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-
-  nightText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
-  dateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: hp(1.8),
-  },
-
-  dateBox: {
-    flex: 1,
-    backgroundColor: '#F1F7F4',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-
-  dateValue: {
-    fontSize: 15,
-    color: '#1B2E29',
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-
-  weekday: {
-    fontSize: 12,
-    color: '#6E8A81',
-  },
-
-  arrow: {
-    fontSize: 26,
-    marginHorizontal: 10,
-    color: '#8AA9A0',
-  },
-
-  propertyBox: {
-    backgroundColor: '#F1F7F4',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-  },
-
-  propertyTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1E2F2B',
-    marginBottom: 4,
-  },
-
-  propertyLocation: {
-    fontSize: 12,
-    color: '#6E8A81',
-  },
-
-  pillRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: hp(1.5),
-  },
-
-  pill: {
-    backgroundColor: '#EAF4F1',
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-
-  pillText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#4E7E72',
-  },
-
-  /* ==================================================
-   NEW STAY DETAILS DESIGN
-================================================== */
+  /* =======================================================
+     STAY CARD
+  ======================================================= */
 
   stayCard: {
     backgroundColor: '#FFFFFF',
@@ -699,8 +2891,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 8,
   },
-
-  /* ================= HEADER ================= */
 
   stayHeader: {
     backgroundColor: '#EAF7F2',
@@ -732,9 +2922,7 @@ const styles = StyleSheet.create({
   },
 
   stayHeaderIconText: {
-    fontSize: 21,
-    fontWeight: '700',
-    color: '#17B978',
+    fontSize: 20,
   },
 
   stayHeaderTitle: {
@@ -745,12 +2933,10 @@ const styles = StyleSheet.create({
   },
 
   stayHeaderSubtitle: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#7A9990',
     marginTop: 3,
   },
-
-  /* ================= NIGHT BADGE ================= */
 
   nightBadgeNew: {
     minWidth: 58,
@@ -777,7 +2963,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  /* ================= DATE SECTION ================= */
+  /* =======================================================
+     DATES
+  ======================================================= */
 
   stayDateSection: {
     flexDirection: 'row',
@@ -791,7 +2979,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5FAF8',
     borderRadius: 15,
-    paddingHorizontal: 12,
+    paddingHorizontal: 11,
     paddingVertical: 13,
     borderWidth: 1,
     borderColor: '#E0EEE9',
@@ -806,7 +2994,7 @@ const styles = StyleSheet.create({
   dateIconCircle: {
     width: 25,
     height: 25,
-    borderRadius: 12.5,
+    borderRadius: 13,
     backgroundColor: '#DDF6EC',
     alignItems: 'center',
     justifyContent: 'center',
@@ -814,48 +3002,44 @@ const styles = StyleSheet.create({
   },
 
   dateIconText: {
-    color: '#17B978',
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 14,
   },
 
   dateType: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '800',
     letterSpacing: 0.5,
     color: '#6C8B82',
   },
 
   stayDateValue: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
     color: '#1D302B',
   },
 
   stayWeekday: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#78938B',
     marginTop: 3,
   },
 
-  /* ================= CONNECTOR ================= */
-
   stayConnector: {
-    width: 36,
+    width: 35,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   connectorLine: {
-    width: 12,
+    width: 10,
     height: 1,
     backgroundColor: '#C8DDD6',
   },
 
   connectorCircle: {
-    width: 27,
-    height: 27,
-    borderRadius: 14,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: '#E8F8F2',
     alignItems: 'center',
     justifyContent: 'center',
@@ -863,13 +3047,14 @@ const styles = StyleSheet.create({
   },
 
   connectorArrow: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#0F9A62',
     fontWeight: '900',
-    lineHeight: 16,
   },
 
-  /* ================= PROPERTY ================= */
+  /* =======================================================
+     PROPERTY
+  ======================================================= */
 
   propertySection: {
     marginHorizontal: 12,
@@ -893,7 +3078,7 @@ const styles = StyleSheet.create({
   },
 
   propertyIcon: {
-    fontSize: 19,
+    fontSize: 18,
   },
 
   propertyInfo: {
@@ -914,7 +3099,7 @@ const styles = StyleSheet.create({
   },
 
   locationPin: {
-    fontSize: 9,
+    fontSize: 8,
     color: '#17B978',
     marginRight: 6,
   },
@@ -925,15 +3110,22 @@ const styles = StyleSheet.create({
     color: '#718C84',
   },
 
-  /* ================= AMENITIES ================= */
-
-  amenitiesSection: {
-    paddingHorizontal: 14,
-    paddingTop: 17,
-    paddingBottom: 15,
+  propertyTagsRow: {
+    marginTop: 8,
+    maxWidth: '100%',
   },
 
-  amenitiesTitle: {
+  /* =======================================================
+     BOOKING INFO
+  ======================================================= */
+
+  infoSection: {
+    paddingHorizontal: 14,
+    paddingTop: 17,
+    paddingBottom: 5,
+  },
+
+  infoSectionTitle: {
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0.7,
@@ -941,35 +3133,34 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
-  pillRowNew: {
+  infoGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
   },
 
-  amenityPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EFF8F4',
-    borderRadius: 20,
-    paddingHorizontal: 11,
-    paddingVertical: 8,
-    marginRight: 7,
-    marginBottom: 7,
-    borderWidth: 1,
-    borderColor: '#DCEFE8',
+  infoItem: {
+    width: '50%',
+    paddingRight: 8,
+    marginBottom: 13,
   },
 
-  amenityIcon: {
-    fontSize: 10,
-    color: '#17B978',
-    marginRight: 5,
+  infoLabel: {
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    color: '#79958C',
+    marginBottom: 4,
   },
 
-  amenityText: {
-    fontSize: 10,
+  infoValue: {
+    fontSize: 11,
     fontWeight: '700',
-    color: '#4D7468',
+    color: '#294139',
   },
+
+  /* =======================================================
+     META
+  ======================================================= */
 
   metaSection: {
     paddingHorizontal: 16,
@@ -987,15 +3178,15 @@ const styles = StyleSheet.create({
   },
 
   metaLabel: {
-    fontSize: 10,
-    fontWeight: '700',
+    fontSize: 9,
+    fontWeight: '800',
     letterSpacing: 0.5,
     color: '#6F8B82',
     textTransform: 'uppercase',
   },
 
   metaValue: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: '#213831',
     textAlign: 'right',
@@ -1003,13 +3194,17 @@ const styles = StyleSheet.create({
     marginLeft: 16,
   },
 
+  /* =======================================================
+     PRICE BREAKDOWN
+  ======================================================= */
+
   priceBreakdownCard: {
     backgroundColor: '#F9FCFB',
     borderRadius: 18,
     borderWidth: 1,
     borderColor: '#D7EDE5',
     overflow: 'hidden',
-    marginBottom: hp(3),
+    marginBottom: hp(2.2),
   },
 
   breakdownHeader: {
@@ -1059,30 +3254,34 @@ const styles = StyleSheet.create({
     borderBottomColor: '#EEF3F1',
   },
 
+  lastBreakdownRow: {
+    borderBottomWidth: 0,
+  },
+
   breakdownLabel: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#405B55',
   },
 
   breakdownValue: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: '#1F2E2B',
   },
 
   breakdownTotalRow: {
     borderBottomWidth: 1,
-    borderBottomColor: '#EEF3F1',
+    borderBottomColor: '#DDEAE5',
   },
 
   breakdownTotalLabel: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
     color: '#1B2F2A',
   },
 
   breakdownTotalValue: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
     color: '#1D2E2A',
   },
@@ -1100,14 +3299,164 @@ const styles = StyleSheet.create({
   },
 
   paidValue: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
-    color: '#1E2E2B',
+    color: '#17B978',
   },
 
   pendingValue: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: '#D94E4E',
   },
+
+  /* =======================================================
+     NOTES
+  ======================================================= */
+
+  notesCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#DCEAE5',
+    marginBottom: hp(3),
+    overflow: 'hidden',
+  },
+
+  notesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    backgroundColor: '#EAF7F2',
+    borderBottomWidth: 1,
+    borderBottomColor: '#DCEAE5',
+  },
+
+  notesIcon: {
+    color: '#17B978',
+    fontSize: 14,
+    marginRight: 8,
+  },
+
+  notesTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    color: '#326F5E',
+  },
+
+  notesText: {
+    fontSize: 12,
+    lineHeight: 19,
+    color: '#405B55',
+    paddingHorizontal: 15,
+    paddingVertical: 14,
+  },
+  tagsCard: {
+  backgroundColor: '#FFFFFF',
+  borderRadius: 20,
+  borderWidth: 1,
+  borderColor: '#DCEAE5',
+  overflow: 'hidden',
+  marginBottom: hp(2.2),
+  elevation: 2,
+  shadowColor: '#000',
+  shadowOffset: {
+    width: 0,
+    height: 2,
+  },
+  shadowOpacity: 0.05,
+  shadowRadius: 8,
+},
+
+tagsHeader: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#EAF7F2',
+  paddingHorizontal: 16,
+  paddingVertical: 15,
+  borderBottomWidth: 1,
+  borderBottomColor: '#DCEAE5',
+},
+
+tagsIconWrap: {
+  width: 42,
+  height: 42,
+  borderRadius: 13,
+  backgroundColor: '#FFFFFF',
+  alignItems: 'center',
+  justifyContent: 'center',
+  marginRight: 11,
+  borderWidth: 1,
+  borderColor: '#D7EBE3',
+},
+
+tagsHeaderIcon: {
+  fontSize: 20,
+  color: '#17B978',
+},
+
+tagsTitle: {
+  fontSize: 13,
+  fontWeight: '800',
+  letterSpacing: 0.6,
+  color: '#326F5E',
+},
+
+tagsSubtitle: {
+  fontSize: 10,
+  color: '#7A9990',
+  marginTop: 3,
+},
+
+tagsContent: {
+  paddingHorizontal: 12,
+  paddingTop: 10,
+  paddingBottom: 10,
+},
+
+tagsScrollContent: {
+  paddingRight: 16,
+},
+
+tagCard: {
+  minWidth: 58,
+  height: 30,
+  backgroundColor: '#EAF9F2',
+  borderRadius: 16,
+  marginRight: 8,
+  paddingHorizontal: 9,
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+},
+
+tagIconBox: {
+  width: 18,
+  height: 18,
+  borderRadius: 9,
+  alignItems: 'center',
+  justifyContent: 'center',
+  marginRight: 5,
+},
+
+tagIcon: {
+  width: 14,
+  height: 14,
+},
+
+tagFallbackIcon: {
+  fontSize: 12,
+  fontWeight: '800',
+  color: '#17B978',
+},
+
+tagName: {
+  fontSize: 10,
+  lineHeight: 12,
+  fontWeight: '600',
+  color: '#159B68',
+  textAlign: 'left',
+},
 });
