@@ -42,6 +42,7 @@ import RoomLogScreen from '../screens/RoomLogScreen';
 import {PropertyProvider} from '../components/PropertyContext';
 import PageHeader from '../components/PageHeader';
 import UserIcon from '../components/UserSvg';
+import {clearAppPin} from '../utils/authStorage';
 
 
 const Stack = createNativeStackNavigator();
@@ -270,11 +271,15 @@ const DrawerContent = ({
                 'userData',
                 'userId',
                 'properties',
+                'loginResponse',
                 'token',
                 'access_token',
                 'authToken',
                 'userToken',
+                'authTimestamp',
+                'appPinConfigured',
               ]);
+              await clearAppPin();
 
             } catch (error) {
 

@@ -1,4 +1,4 @@
-import React, {useEffect, useRef} from 'react';
+import React, {useCallback, useEffect, useRef} from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,13 @@ import {
 } from 'react-native';
 import SplashscreenImg from '../assets/splashscreen_img.svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {clearAppPin, getAppPin} from '../utils/authStorage';
 
 const {width, height} = Dimensions.get('window');
 
 const PRIMARY = '#07996F';
 const BACKGROUND = '#07996F';
+const SESSION_LENGTH_MS = 30 * 24 * 60 * 60 * 1000;
 
 const SplashScreen = ({navigation}) => {
   const fadeAnim = useRef(
@@ -54,125 +56,102 @@ const SplashScreen = ({navigation}) => {
       contentAnimation.stop();
     };
   }, [
-    navigation,
+    checkLogin,
     fadeAnim,
     scaleAnim,
   ]);
 
 
-  const checkLogin = async () => {
+  const checkLogin = useCallback(async () => {
+    let pinConfigured = null;
+    let pin = null;
+
     try {
-      console.log(
-        '================================',
+      const tokenKeys = ['authToken', 'token', 'access_token', 'userToken'];
+      pinConfigured = await AsyncStorage.getItem('appPinConfigured');
+      let authTimestamp = await AsyncStorage.getItem('authTimestamp');
+      const storedTokens = await Promise.all(
+        tokenKeys.map(key => AsyncStorage.getItem(key)),
       );
+      const token = storedTokens.some(Boolean);
 
-      console.log(
-        'SPLASH: CHECKING LOGIN...',
-      );
-
-
-      let token =
-        await AsyncStorage.getItem(
-          'authToken',
-        );
-
-      console.log(
-        'AUTH TOKEN:',
-        token
-          ? 'FOUND'
-          : 'NOT FOUND',
-      );
-
-
-      if (!token) {
-        token =
-          await AsyncStorage.getItem(
-            'token',
-          );
-
-        console.log(
-          'TOKEN:',
-          token
-            ? 'FOUND'
-            : 'NOT FOUND',
-        );
+      try {
+        pin = await getAppPin();
+      } catch (error) {
+        console.log('SPLASH PIN READ ERROR:', error);
       }
 
-      if (!token) {
-        token =
-          await AsyncStorage.getItem(
-            'access_token',
-          );
-
-        console.log(
-          'ACCESS TOKEN:',
-          token
-            ? 'FOUND'
-            : 'NOT FOUND',
-        );
-      }
-
-      if (!token) {
-        token =
-          await AsyncStorage.getItem(
-            'userToken',
-          );
-
-        console.log(
-          'USER TOKEN:',
-          token
-            ? 'FOUND'
-            : 'NOT FOUND',
-        );
-      }
-
-      const storedUser =
-        await AsyncStorage.getItem(
-          'user',
-        );
-
-      console.log(
-        'STORED USER:',
-        storedUser
-          ? 'FOUND'
-          : 'NOT FOUND',
-      );
-
-      console.log(
-        '================================',
-      );
+      const hasSession =
+        token ||
+        Boolean(authTimestamp) ||
+        pinConfigured === 'true' ||
+        Boolean(pin);
 
       await new Promise(resolve =>
         setTimeout(resolve, 1600),
       );
 
-      if (token) {
-        console.log(
-          'SPLASH: USER ALREADY LOGGED IN',
-        );
+      if (hasSession) {
+        const now = Date.now();
 
+        if (!authTimestamp) {
+          authTimestamp = String(now);
+          await AsyncStorage.setItem('authTimestamp', authTimestamp);
+        }
+
+        const authenticatedAt = Number(authTimestamp);
+        const sessionExpired =
+          !Number.isFinite(authenticatedAt) ||
+          authenticatedAt > now ||
+          now - authenticatedAt >= SESSION_LENGTH_MS;
+
+        if (sessionExpired) {
+          await AsyncStorage.multiRemove([
+            'user',
+            'userData',
+            'userId',
+            'properties',
+            'loginResponse',
+            'authToken',
+            'token',
+            'access_token',
+            'userToken',
+            'authTimestamp',
+            'appPinConfigured',
+          ]);
+          await clearAppPin();
+          navigation.reset({
+            index: 0,
+            routes: [{name: 'Login'}],
+          });
+          return;
+        }
 
         navigation.reset({
           index: 0,
           routes: [
             {
-              name: 'MainApp',
+              name: 'Login',
+              params: {
+                mode: pin || pinConfigured === 'true' ? 'pin' : 'setupPin',
+              },
             },
           ],
         });
-
         return;
       }
-
-      console.log(
-        'SPLASH: USER NOT LOGGED IN',
-      );
 
       navigation.reset({
         index: 0,
         routes: [
           {
             name: 'Login',
+            params: {
+              mode:
+                pin || pinConfigured === 'true'
+                  ? 'pin'
+                  : 'credentials',
+            },
           },
         ],
       });
@@ -181,19 +160,22 @@ const SplashScreen = ({navigation}) => {
         'SPLASH LOGIN CHECK ERROR:',
         error,
       );
-
-
-
       navigation.reset({
         index: 0,
         routes: [
           {
             name: 'Login',
+            params: {
+              mode:
+                pin || pinConfigured === 'true'
+                  ? 'pin'
+                  : 'credentials',
+            },
           },
         ],
       });
     }
-  };
+  }, [navigation]);
 
   return (
     <View style={styles.container}>
