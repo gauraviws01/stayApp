@@ -13,6 +13,9 @@ import {
 } from 'react-native';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import ArrivalIcon from '../components/ArrivalIcon';
+import DepartureIcon from '../components/DepartureIcon';
+import HomeIcon from '../components/HomeIcon';
 
 // ======================================================
 // RESPONSIVE
@@ -922,8 +925,14 @@ const normalizeBooking = (booking, type, storedProperties) => {
 // BOOKING CARD
 // ======================================================
 
-const BookingCard = memo(({ item, onPress }) => {
+const BookingCard = memo(({ item, onPress, activeTab }) => {
   const isPending = item.statusType === 'pending';
+  const BookingIcon =
+    activeTab === 'arrivals'
+      ? ArrivalIcon
+      : activeTab === 'departures'
+      ? DepartureIcon
+      : HomeIcon;
 
   return (
     <TouchableOpacity
@@ -935,9 +944,11 @@ const BookingCard = memo(({ item, onPress }) => {
         <View
           style={[styles.propertyIcon, isPending && styles.propertyIconPending]}
         >
-          <Text style={[styles.homeIcon, isPending && styles.homeIconPending]}>
-            ⌂
-          </Text>
+          <BookingIcon
+            width={wp(6)}
+            height={wp(6)}
+            color={isPending ? '#C8880A' : '#15965F'}
+          />
         </View>
 
         <View style={styles.bookingContent}>
@@ -1604,8 +1615,14 @@ const DashboardScreen = ({ navigation, route }) => {
   // ====================================================
 
   const renderBooking = useCallback(
-    ({ item }) => <BookingCard item={item} onPress={openBookingDetail} />,
-    [openBookingDetail],
+    ({ item }) => (
+      <BookingCard
+        item={item}
+        onPress={openBookingDetail}
+        activeTab={activeTab}
+      />
+    ),
+    [activeTab, openBookingDetail],
   );
 
   // ====================================================
@@ -1733,7 +1750,7 @@ const DashboardScreen = ({ navigation, route }) => {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
+          {/* <TouchableOpacity
             activeOpacity={0.8}
             onPress={() => selectDateFilter('Next 7 days')}
             style={[
@@ -1749,7 +1766,7 @@ const DashboardScreen = ({ navigation, route }) => {
             >
               Next 7 days
             </Text>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
       </View>
     ),
@@ -1975,16 +1992,6 @@ const styles = StyleSheet.create({
 
   propertyIconPending: {
     backgroundColor: '#FFF0CF',
-  },
-
-  homeIcon: {
-    fontSize: wp(5.5),
-    color: '#15965F',
-    lineHeight: wp(6),
-  },
-
-  homeIconPending: {
-    color: '#C8880A',
   },
 
   bookingContent: {
