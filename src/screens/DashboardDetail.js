@@ -1692,15 +1692,7 @@ const BookingDetail = ({
               PRICE CARDS
           ================================================= */}
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={
-              false
-            }
-            contentContainerStyle={
-              styles.summaryGrid
-            }
-          >
+          <View style={styles.summaryGrid}>
             <PriceCard
               title="BASE PRICE"
               value={basePrice}
@@ -1731,7 +1723,7 @@ const BookingDetail = ({
                 styles.pendingCardValue
               }
             />
-          </ScrollView>
+          </View>
 
           {/* =================================================
               GUEST DETAILS
@@ -2713,35 +2705,36 @@ const styles = StyleSheet.create({
   ======================================================= */
 
   summaryGrid: {
-    paddingBottom: hp(1),
-    marginBottom: hp(2.5),
     flexDirection: 'row',
-    alignItems: 'stretch',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    columnGap: 8,
+    marginBottom: hp(1.5),
   },
 
   priceCard: {
-    width: width * 0.34,
-    minHeight: 76,
+    width: '31%',
+    minHeight: 62,
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    paddingHorizontal: 13,
-    paddingVertical: 12,
-    marginRight: 8,
+    borderRadius: 11,
+    paddingHorizontal: 8,
+    paddingVertical: 9,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: '#D7E5E1',
     justifyContent: 'center',
   },
 
   priceCardTitle: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '800',
     color: '#6E8E86',
-    letterSpacing: 0.5,
-    marginBottom: 7,
+    letterSpacing: 0.3,
+    marginBottom: 5,
   },
 
   priceCardValue: {
-    fontSize: 17,
+    fontSize: 14,
     fontWeight: '800',
     color: '#1D2E2A',
   },

@@ -926,13 +926,19 @@ const normalizeBooking = (booking, type, storedProperties) => {
 // ======================================================
 
 const BookingCard = memo(({ item, onPress, activeTab }) => {
-  const isPending = item.statusType === 'pending';
   const BookingIcon =
     activeTab === 'arrivals'
       ? ArrivalIcon
       : activeTab === 'departures'
       ? DepartureIcon
       : HomeIcon;
+  const iconBackgroundColor =
+    activeTab === 'arrivals'
+      ? '#15965F'
+      : activeTab === 'departures'
+      ? '#dc3545'
+      : '#f5f5f5';
+  const iconColor = activeTab === 'occupancy' ? '#15965F' : '#fff';
 
   return (
     <TouchableOpacity
@@ -941,14 +947,8 @@ const BookingCard = memo(({ item, onPress, activeTab }) => {
       onPress={() => onPress(item)}
     >
       <View style={styles.bookingTopRow}>
-        <View
-          style={[styles.propertyIcon, isPending && styles.propertyIconPending]}
-        >
-          <BookingIcon
-            width={wp(6)}
-            height={wp(6)}
-            color={isPending ? '#C8880A' : '#15965F'}
-          />
+        <View style={[styles.propertyIcon, { backgroundColor: iconBackgroundColor }]}>
+          <BookingIcon width={wp(6)} height={wp(6)} color={iconColor} />
         </View>
 
         <View style={styles.bookingContent}>
@@ -1988,10 +1988,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
-  },
-
-  propertyIconPending: {
-    backgroundColor: '#FFF0CF',
   },
 
   bookingContent: {
