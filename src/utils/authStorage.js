@@ -1,8 +1,11 @@
 import * as Keychain from 'react-native-keychain';
 import {NativeModules} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CREDENTIALS_SERVICE = 'com.staysereno.remembered-credentials';
 const PIN_SERVICE = 'com.staysereno.app-pin';
+const AUTH_TOKEN_KEYS = ['authToken', 'token', 'access_token', 'userToken'];
+const LOGIN_API = 'https://staysereno.in/api/staff/login';
 const STORAGE_UNAVAILABLE_MESSAGE =
   'Secure storage is unavailable in this app build. Install a freshly rebuilt app, then try again.';
 
@@ -21,6 +24,47 @@ export const getRememberedCredentials = async () => {
   return credentials
     ? {email: credentials.username, password: credentials.password}
     : null;
+};
+
+export const renewAuthToken = async () => {
+  const credentials = await getRememberedCredentials();
+
+  if (!credentials) {
+    return null;
+  }
+
+  const response = await fetch(LOGIN_API, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(credentials),
+  });
+  const responseText = await response.text();
+
+  let loginData;
+  try {
+    loginData = JSON.parse(responseText);
+  } catch (error) {
+    throw new Error('Invalid response while renewing the session.');
+  }
+
+  const token =
+    response.ok && loginData?.status === true && loginData?.token
+      ? String(loginData.token).trim()
+      : '';
+
+  if (!token) {
+    return null;
+  }
+
+  await AsyncStorage.setMany({
+    ...Object.fromEntries(AUTH_TOKEN_KEYS.map(key => [key, token])),
+    authTimestamp: String(Date.now()),
+  });
+
+  return token;
 };
 
 export const saveRememberedCredentials = async (email, password) => {

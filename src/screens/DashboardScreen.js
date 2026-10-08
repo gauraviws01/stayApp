@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   View,
@@ -13,9 +13,16 @@ import {
 } from 'react-native';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+<<<<<<< Updated upstream
 import ArrivalIcon from '../components/ArrivalIcon';
 import DepartureIcon from '../components/DepartureIcon';
 import HomeIcon from '../components/HomeIcon';
+=======
+import {
+  clearAppPin,
+  renewAuthToken,
+} from '../utils/authStorage';
+>>>>>>> Stashed changes
 
 // ======================================================
 // RESPONSIVE
@@ -1029,6 +1036,8 @@ const ListLoader = () => {
 // ======================================================
 
 const DashboardScreen = ({ navigation, route }) => {
+  const sessionExpiryAlertShown = useRef(false);
+
   const [activeTab, setActiveTab] = useState('arrivals');
 
   const [dateFilter, setDateFilter] = useState('Today');
@@ -1104,9 +1113,12 @@ const DashboardScreen = ({ navigation, route }) => {
         const value = await AsyncStorage.getItem(key);
 
         if (value) {
-          console.log(`DASHBOARD TOKEN FOUND FROM: ${key}`);
+          const token = value.trim();
 
-          return value;
+          if (token) {
+            console.log(`DASHBOARD TOKEN FOUND FROM: ${key}`);
+            return token;
+          }
         }
       }
 
@@ -1119,6 +1131,51 @@ const DashboardScreen = ({ navigation, route }) => {
       return null;
     }
   }, []);
+
+  const handleSessionExpired = useCallback(() => {
+    if (sessionExpiryAlertShown.current) {
+      return;
+    }
+
+    sessionExpiryAlertShown.current = true;
+
+    Alert.alert(
+      'Session expired',
+      'Please login again.',
+      [
+        {
+          text: 'OK',
+          onPress: async () => {
+            try {
+              await AsyncStorage.removeMany([
+                'user',
+                'userData',
+                'userId',
+                'properties',
+                'loginResponse',
+                'authToken',
+                'token',
+                'access_token',
+                'userToken',
+                'authTimestamp',
+                'appPinConfigured',
+                'selectedPropertyId',
+              ]);
+              await clearAppPin();
+            } catch (error) {
+              console.log('CLEAR EXPIRED SESSION ERROR:', error);
+            } finally {
+              navigation.reset({
+                index: 0,
+                routes: [{name: 'Login', params: {mode: 'credentials'}}],
+              });
+            }
+          },
+        },
+      ],
+      {cancelable: false},
+    );
+  }, [navigation]);
 
   // ====================================================
   // LOAD STORED PROPERTIES / UNITS
@@ -1170,7 +1227,15 @@ const DashboardScreen = ({ navigation, route }) => {
 
         const userId = await getUserId();
 
-        const token = await getToken();
+        let token = await getToken();
+
+        if (!token) {
+          try {
+            token = await renewAuthToken();
+          } catch (error) {
+            console.log('DASHBOARD TOKEN RENEWAL ERROR:', error);
+          }
+        }
 
         console.log('====================================');
 
@@ -1181,6 +1246,12 @@ const DashboardScreen = ({ navigation, route }) => {
         console.log('DASHBOARD SELECTED FILTER:', selectedDateFilter);
 
         console.log('====================================');
+
+        if (!token) {
+          console.log('DASHBOARD REQUEST SKIPPED: AUTH TOKEN NOT FOUND');
+          handleSessionExpired();
+          return;
+        }
 
         if (!userId) {
           console.log('DASHBOARD USER ID NOT FOUND');
@@ -1221,7 +1292,7 @@ const DashboardScreen = ({ navigation, route }) => {
 
         console.log('====================================');
 
-        const response = await fetch(DASHBOARD_API, {
+        let response = await fetch(DASHBOARD_API, {
           method: 'POST',
 
           headers: {
@@ -1229,15 +1300,33 @@ const DashboardScreen = ({ navigation, route }) => {
 
             'Content-Type': 'application/json',
 
-            ...(token
-              ? {
-                  Authorization: `Bearer ${token}`,
-                }
-              : {}),
+            Authorization: `Bearer ${token}`,
           },
 
           body: JSON.stringify(requestBody),
         });
+
+        if (response.status === 401) {
+          let refreshedToken = null;
+
+          try {
+            refreshedToken = await renewAuthToken();
+          } catch (error) {
+            console.log('DASHBOARD TOKEN RENEWAL ERROR:', error);
+          }
+
+          if (refreshedToken) {
+            response = await fetch(DASHBOARD_API, {
+              method: 'POST',
+              headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${refreshedToken}`,
+              },
+              body: JSON.stringify(requestBody),
+            });
+          }
+        }
 
         const rawText = await response.text();
 
@@ -1259,43 +1348,8 @@ const DashboardScreen = ({ navigation, route }) => {
         // UNAUTHENTICATED
         // --------------------------------------------
 
-        if (response.status === 401 || json?.message === 'Unauthenticated.') {
-          Alert.alert(
-            'Session expired',
-            'Please login again.',
-            [
-              {
-                text: 'OK',
-
-                onPress: async () => {
-                  try {
-                    await AsyncStorage.multiRemove([
-                      'authToken',
-                      'token',
-                      'access_token',
-                      'userToken',
-                    ]);
-                  } catch (error) {
-                    console.log('CLEAR TOKEN ERROR:', error);
-                  }
-
-                  navigation.reset({
-                    index: 0,
-
-                    routes: [
-                      {
-                        name: 'Login',
-                      },
-                    ],
-                  });
-                },
-              },
-            ],
-            {
-              cancelable: false,
-            },
-          );
-
+        if (response.status === 401) {
+          handleSessionExpired();
           return;
         }
 
@@ -1386,7 +1440,11 @@ const DashboardScreen = ({ navigation, route }) => {
         setRefreshing(false);
       }
     },
-    [getToken, getUserId, navigation],
+    [
+      getToken,
+      getUserId,
+      handleSessionExpired,
+    ],
   );
 
   // ====================================================

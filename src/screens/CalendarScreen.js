@@ -12,15 +12,17 @@ import {
   TouchableOpacity,
   ScrollView,
   Dimensions,
-  Platform,
   ActivityIndicator,
   Alert,
 } from 'react-native';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import RenderHtml from 'react-native-render-html';
 
 import PropertyDropdown from '../components/PropertyDropdown';
 import PageHeader from '../components/PageHeader';
+import {useProperty} from '../components/PropertyContext';
+import {clearAppPin, renewAuthToken} from '../utils/authStorage';
 
 
 const {width, height} = Dimensions.get('window');
@@ -63,14 +65,16 @@ const CELL_HEIGHT = hp(8.5);
 
 const CalendarScreen = ({navigation}) => {
 
+  const {
+    units,
+    selectedUnit,
+    handleUnitChange: updateSharedUnit,
+  } = useProperty();
 
   const [userId, setUserId] = useState(null);
 
   const [authToken, setAuthToken] = useState(null);
-
-
-  const [units, setUnits] = useState([]);
-  const [selectedUnit, setSelectedUnit] = useState(null);
+  const [expandedSection, setExpandedSection] = useState(null);
 
 
   const [bookings, setBookings] = useState([]);
@@ -119,25 +123,20 @@ const CalendarScreen = ({navigation}) => {
       const storedUserId =
         await AsyncStorage.getItem('userId');
 
-      const storedProperties =
-        await AsyncStorage.getItem('properties');
-
- 
-
       let token =
-        await AsyncStorage.getItem('token');
+        await AsyncStorage.getItem('authToken');
 
       if (!token) {
         token =
           await AsyncStorage.getItem(
-            'access_token',
+            'token',
           );
       }
 
       if (!token) {
         token =
           await AsyncStorage.getItem(
-            'authToken',
+            'access_token',
           );
       }
 
@@ -200,65 +199,6 @@ const CalendarScreen = ({navigation}) => {
         setAuthToken(token);
       }
 
-      /* =================================================
-         PROPERTIES
-      ================================================= */
-
-      let propertyList = [];
-
-      if (storedProperties) {
-        try {
-          const parsed =
-            JSON.parse(storedProperties);
-
-          if (Array.isArray(parsed)) {
-            propertyList = parsed;
-          }
-        } catch (error) {
-          console.log(
-            'PROPERTIES PARSE ERROR:',
-            error,
-          );
-        }
-      }
-
-      /* =================================================
-         NORMALIZE PROPERTIES
-      ================================================= */
-
-      const normalizedProperties =
-        propertyList.map(item => ({
-          ...item,
-
-          unit_id:
-            item?.unit_id ??
-            item?.id ??
-            item?.property_id,
-
-          unit_name:
-            item?.unit_name ??
-            item?.final_unit_name ??
-            item?.name ??
-            item?.property_name ??
-            '',
-        }));
-
-      setUnits(
-        normalizedProperties,
-      );
-
-      /* =================================================
-         DEFAULT UNIT
-      ================================================= */
-
-      if (
-        normalizedProperties.length >
-        0
-      ) {
-        setSelectedUnit(
-          normalizedProperties[0],
-        );
-      }
     } catch (error) {
       console.log(
         'LOAD CALENDAR ERROR:',
@@ -278,20 +218,20 @@ const CalendarScreen = ({navigation}) => {
 
     let token =
       await AsyncStorage.getItem(
-        'token',
+        'authToken',
       );
 
     if (!token) {
       token =
         await AsyncStorage.getItem(
-          'access_token',
+          'token',
         );
     }
 
     if (!token) {
       token =
         await AsyncStorage.getItem(
-          'authToken',
+          'access_token',
         );
     }
 
@@ -325,6 +265,7 @@ const CalendarScreen = ({navigation}) => {
     month,
     year,
     authToken,
+    fetchBookings,
   ]);
 
   /* ===================================================
@@ -340,13 +281,22 @@ const CalendarScreen = ({navigation}) => {
 
       setBookings([]);
 
-      const token =
-        await getAuthToken();
+      let token = await getAuthToken();
 
       if (!token) {
-        throw new Error(
-          'Authentication token not found. Please login again.',
-        );
+        try {
+          token = await renewAuthToken();
+        } catch (error) {
+          console.log('MAINTENANCE TOKEN RENEWAL ERROR:', error);
+        }
+
+        if (token) {
+          setAuthToken(token);
+        } else {
+          throw new Error(
+            'Authentication token not found. Please login again.',
+          );
+        }
       }
 
 
@@ -397,7 +347,7 @@ const CalendarScreen = ({navigation}) => {
          API REQUEST
       ================================================= */
 
-      const response =
+      let response =
         await fetch(
           BOOKING_API,
           {
@@ -420,6 +370,29 @@ const CalendarScreen = ({navigation}) => {
               ),
           },
         );
+
+      if (response.status === 401) {
+        let refreshedToken = null;
+        try {
+          refreshedToken = await renewAuthToken();
+        } catch (error) {
+          console.log('MAINTENANCE TOKEN RENEWAL ERROR:', error);
+        }
+
+        if (refreshedToken) {
+          token = refreshedToken;
+          setAuthToken(refreshedToken);
+          response = await fetch(BOOKING_API, {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json',
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${refreshedToken}`,
+            },
+            body: JSON.stringify(requestBody),
+          });
+        }
+      }
 
       /* =================================================
          RESPONSE TEXT
@@ -538,12 +511,21 @@ const CalendarScreen = ({navigation}) => {
                 text: 'OK',
                 onPress: async () => {
                   try {
-                    await AsyncStorage.multiRemove([
+                    await AsyncStorage.removeMany([
+                      'user',
+                      'userData',
+                      'userId',
+                      'properties',
+                      'loginResponse',
                       'authToken',
                       'token',
                       'access_token',
                       'userToken',
+                      'authTimestamp',
+                      'appPinConfigured',
+                      'selectedPropertyId',
                     ]);
+                    await clearAppPin();
                   } catch (storageError) {
                     console.log(
                       'CLEAR TOKEN ERROR:',
@@ -1254,20 +1236,17 @@ const CalendarScreen = ({navigation}) => {
   =================================================== */
 
   const handleUnitChange =
-    unit => {
+    async unit => {
       if (
-        selectedUnit?.unit_id ===
-        unit?.unit_id
+        String(selectedUnit?.unit_id) ===
+        String(unit?.unit_id)
       ) {
         return;
       }
 
-
       setBookings([]);
 
-   
-
-      setSelectedUnit(unit);
+      await updateSharedUnit(unit);
     };
 
   /* ===================================================
@@ -1789,6 +1768,116 @@ const CalendarScreen = ({navigation}) => {
               </Text>
             </View>
           </View>
+          <View style={styles.sectionMenu}>
+            {[
+              {key: 'wifi', title: 'Wi-Fi Details', kind: 'expand'},
+              {key: 'caretaker', title: 'Caretaker Details', kind: 'expand'},
+              {key: 'cleaning', title: 'Daily Cleaning Checklist', kind: 'cleaning'},
+              {key: 'maintenance', title: 'Maintenance', kind: 'maintenance'},
+              {key: 'inventory', title: 'Inventory', kind: 'inventory'},
+            ].map(item => {
+              const isExpanded = expandedSection === item.key;
+              const onPress = () => {
+                if (item.kind === 'cleaning') {
+                  navigation.navigate('MainApp', {
+                    screen: 'DailyCleaningScreen',
+                  });
+                  return;
+                }
+
+                if (item.kind === 'maintenance') {
+                  navigation.navigate('CalendarScreen');
+                  return;
+                }
+
+                if (item.kind === 'inventory') {
+                  navigation.navigate('InventoryDetail', {
+                    selectedPropertyId: selectedUnit?.unit_id,
+                    selectedProperty: selectedUnit,
+                  });
+                  return;
+                }
+
+                setExpandedSection(isExpanded ? null : item.key);
+              };
+
+              return (
+                <React.Fragment key={item.key}>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityState={{
+                      expanded:
+                        item.kind === 'expand' ? isExpanded : undefined,
+                    }}
+                    style={[
+                      styles.sectionMenuItem,
+                      isExpanded && styles.sectionMenuItemActive,
+                    ]}
+                    onPress={onPress}>
+                    <Text
+                      style={[
+                        styles.sectionMenuText,
+                        isExpanded && styles.sectionMenuTextActive,
+                      ]}>
+                      {item.title}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.sectionMenuChevron,
+                        isExpanded && styles.sectionMenuTextActive,
+                      ]}>
+                      {item.kind === 'expand' ? (isExpanded ? '⌃' : '›') : '›'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {isExpanded && item.key === 'wifi' && (
+                    <View style={styles.detailsCard}>
+                      {selectedUnit?.internal_wifi_electricity_account_details ? (
+                        <RenderHtml
+                          contentWidth={width - wp(14)}
+                          source={{
+                            html: String(
+                              selectedUnit.internal_wifi_electricity_account_details,
+                            ).trim(),
+                          }}
+                          tagsStyles={styles.detailsHtml}
+                        />
+                      ) : (
+                        <Text style={styles.detailsEmpty}>
+                          No Wi-Fi or electricity details are available
+                          {selectedUnit
+                            ? ` for ${getUnitName(selectedUnit)}.`
+                            : '.'}
+                        </Text>
+                      )}
+                    </View>
+                  )}
+
+                  {isExpanded && item.key === 'caretaker' && (
+                    <View style={styles.detailsCard}>
+                      {selectedUnit?.caretaker_details ? (
+                        <RenderHtml
+                          contentWidth={width - wp(14)}
+                          source={{
+                            html: String(selectedUnit.caretaker_details).trim(),
+                          }}
+                          tagsStyles={styles.detailsHtml}
+                        />
+                      ) : (
+                        <Text style={styles.detailsEmpty}>
+                          No caretaker details are available
+                          {selectedUnit
+                            ? ` for ${getUnitName(selectedUnit)}.`
+                            : '.'}
+                        </Text>
+                      )}
+                    </View>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </View>
         </ScrollView>
       </View>
 
@@ -1857,7 +1946,98 @@ const styles =
 
       zIndex: 1000,
 
-      elevation: 30,
+      elevation:       30,
+    },
+
+    sectionMenu: {
+      flexDirection: 'column',
+      marginHorizontal: wp(4),
+      marginTop: hp(1.2),
+      gap: hp(0.8),
+    },
+
+    sectionMenuItem: {
+      width: '100%',
+      minHeight: hp(6),
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: wp(4),
+      backgroundColor: '#FFFFFF',
+      borderWidth: 1,
+      borderColor: '#D9E2DE',
+      borderRadius: wp(2),
+    },
+
+    sectionMenuItemActive: {
+      borderColor: PRIMARY,
+      backgroundColor: '#EAF8F1',
+    },
+
+    sectionMenuText: {
+      color: DARK,
+      fontSize: wp(3.5),
+      fontWeight: '700',
+    },
+
+    sectionMenuTextActive: {
+      color: PRIMARY,
+    },
+
+    sectionMenuChevron: {
+      color: '#84918B',
+      fontSize: wp(4.5),
+      fontWeight: '700',
+    },
+
+    detailsCard: {
+      marginHorizontal: wp(4),
+      marginTop: hp(1.2),
+      padding: wp(4),
+      backgroundColor: '#FFFFFF',
+      borderWidth: 1,
+      borderColor: '#D5D5D5',
+      borderRadius: wp(3.5),
+    },
+
+    detailsTitle: {
+      marginBottom: hp(1),
+      color: DARK,
+      fontSize: wp(4),
+      fontWeight: '700',
+    },
+
+    detailsEmpty: {
+      color: '#737E79',
+      fontSize: wp(3.5),
+      lineHeight: hp(2.8),
+    },
+
+    detailsHtml: {
+      p: {
+        color: '#495057',
+        fontSize: 15,
+        lineHeight: 22,
+        margin: 0,
+        marginBottom: 6,
+      },
+      strong: {
+        color: '#222222',
+        fontWeight: 'bold',
+      },
+      b: {
+        color: '#222222',
+        fontWeight: 'bold',
+      },
+      div: {
+        color: '#495057',
+        fontSize: 15,
+        lineHeight: 22,
+      },
+      span: {
+        color: '#495057',
+        fontSize: 15,
+      },
     },
 
     /* ==================================================
@@ -2248,7 +2428,7 @@ const styles =
 
     monthHeader: {
       minHeight:
-        hp(9),
+        hp(4),
 
       flexDirection:
         'row',

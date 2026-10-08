@@ -1056,7 +1056,7 @@ const DailyCleaningScreen = ({
       authExpiredAlertShownRef.current =
         true;
 
-      await AsyncStorage.multiRemove([
+      await AsyncStorage.removeMany([
         'authToken',
         'token',
         'access_token',

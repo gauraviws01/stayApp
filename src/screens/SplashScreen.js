@@ -106,7 +106,7 @@ const SplashScreen = ({navigation}) => {
           now - authenticatedAt >= SESSION_LENGTH_MS;
 
         if (sessionExpired) {
-          await AsyncStorage.multiRemove([
+          await AsyncStorage.removeMany([
             'user',
             'userData',
             'userId',

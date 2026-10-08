@@ -175,29 +175,29 @@ const DrawerContent = ({
   }, []);
 
   const quickAccessItems = [
-    {
-      icon: '📶',
-      iconColor: '#38BFA5',
-      bg: '#EAF7F3',
-      title: 'Wifi/Electricity details',
-      subtitle: 'Access points & passwords',
-      route: 'WifiDetail',
-    },
-    {
-      icon: '👥',
-      iconColor: '#B77CE8',
-      bg: '#F5EEFF',
-      title: 'Caretaker',
-      subtitle: 'People on property',
-      route: 'CaretakerDetail',
-    },
+    // {
+    //   icon: '📶',
+    //   iconColor: '#38BFA5',
+    //   bg: '#EAF7F3',
+    //   title: 'Wifi/Electricity details',
+    //   subtitle: 'Access points & passwords',
+    //   route: 'WifiDetail',
+    // },
+    // {
+    //   icon: '👥',
+    //   iconColor: '#B77CE8',
+    //   bg: '#F5EEFF',
+    //   title: 'Caretaker',
+    //   subtitle: 'People on property',
+    //   route: 'CaretakerDetail',
+    // },
     {
       icon: '✦',
       iconColor: '#E7A450',
       bg: '#FFF3E7',
-      title: 'Daily Cleaning',
+      title: 'Dashboard',
       subtitle: "Today's housekeeping plan",
-      route: 'MainApp',
+      route: 'DashboardScreen',
       targetScreen: 'DailyCleaningScreen',
     },
     {
@@ -209,14 +209,14 @@ const DrawerContent = ({
       route: 'MainApp',
       targetScreen: 'CalendarScreen',
     },
-    {
-      icon: '◎',
-      iconColor: '#1EA86D',
-      bg: '#EAF9F0',
-      title: 'Inventory',
-      subtitle: 'Supplies & stock levels',
-      route: 'InventoryDetail',
-    },
+    // {
+    //   icon: '◎',
+    //   iconColor: '#1EA86D',
+    //   bg: '#EAF9F0',
+    //   title: 'Inventory',
+    //   subtitle: 'Supplies & stock levels',
+    //   route: 'InventoryDetail',
+    // },
   ];
 
 
@@ -266,7 +266,7 @@ const DrawerContent = ({
 
             try {
 
-              await AsyncStorage.multiRemove([
+              await AsyncStorage.removeMany([
                 'user',
                 'userData',
                 'userId',

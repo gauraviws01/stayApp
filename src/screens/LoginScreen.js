@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {
   View,
   Text,
@@ -7,11 +7,9 @@ import {
   TextInput,
   TouchableOpacity,
   KeyboardAvoidingView,
-  ScrollView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { SvgUri } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   assertSecureStorageAvailable,
@@ -28,7 +26,7 @@ const BACKGROUND = '#F9FCFA';
 
 const LOGIN_API = 'https://staysereno.in/api/staff/login';
 
-const LOGO_URL = 'https://staysereno.in/frontend/assets/images/logo-shape.svg';
+// const LOGO_URL = 'https://staysereno.in/frontend/assets/images/logo-shape.svg';
 
 const PIN_LENGTH = 4;
 
@@ -41,8 +39,6 @@ const LoginScreen = ({navigation, route}) => {
   const [rememberMe, setRememberMe] = useState(false);
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
-  const scrollViewRef = useRef(null);
-
   useEffect(() => {
     if (route?.params?.mode) {
       setMode(route.params.mode);
@@ -195,7 +191,13 @@ const LoginScreen = ({navigation, route}) => {
         ========================================== */
 
         if (data?.token) {
-          await AsyncStorage.setItem('authToken', String(data.token));
+          const token = String(data.token).trim();
+          await AsyncStorage.setMany({
+            authToken: token,
+            token,
+            access_token: token,
+            userToken: token,
+          });
         }
 
         /* ==========================================
@@ -269,20 +271,14 @@ const LoginScreen = ({navigation, route}) => {
         behavior="padding"
         keyboardVerticalOffset={0}
       >
-        <ScrollView
+        {/* <ScrollView
           ref={scrollViewRef}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          // keyboardDismissMode="on-drag"
-          // automaticallyAdjustKeyboardInsets={true}
-        >
-          {/* LOGO */}
+        > */}
 
           <View style={styles.logoSection}>
-            <View style={styles.logoWrapper}>
-              <SvgUri uri={LOGO_URL} width={90} height={90} />
-            </View>
 
             <View style={styles.brandRow}>
               <Text style={styles.stayText}>Housekeeping</Text>
@@ -341,14 +337,6 @@ const LoginScreen = ({navigation, route}) => {
                     <TextInput
                       value={password}
                       onChangeText={setPassword}
-                      onFocus={() => {
-                        setTimeout(() => {
-                          scrollViewRef.current?.scrollTo({
-                            y: 180,
-                            animated: true,
-                          });
-                        }, 300);
-                      }}
                       placeholder="Enter your password"
                       placeholderTextColor="#9AA8A2"
                       secureTextEntry={!showPassword}
@@ -477,7 +465,7 @@ const LoginScreen = ({navigation, route}) => {
           <Text style={styles.footerText}>
             © StaySereno • Maintenance Portal
           </Text>
-        </ScrollView>
+        {/* </ScrollView> */}
       </KeyboardAvoidingView>
     </View>
   );
@@ -489,10 +477,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: BACKGROUND,
+    
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   flex: {
-    flex: 1,
+    // flex: ,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
   },
 
   scrollContent: {
@@ -500,6 +494,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     paddingTop: 45,
     paddingBottom: 300,
+    
   },
 
   logoSection: {

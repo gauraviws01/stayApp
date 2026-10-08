@@ -343,6 +343,7 @@ const getToken = async () => {
 
 const InventoryDetailScreen = ({
   navigation,
+  route,
 }) => {
   const insets =
     useSafeAreaInsets();
@@ -567,7 +568,24 @@ const InventoryDetailScreen = ({
           ),
         );
 
-        const firstProperty = storedList[0];
+        const requestedPropertyId =
+          route?.params?.selectedPropertyId;
+        const requestedProperty =
+          route?.params?.selectedProperty;
+        const firstProperty =
+          storedList.find(property => {
+            const propertyId =
+              property?.unit_id ??
+              property?.unitId ??
+              property?.property_id ??
+              property?.id;
+            return (
+              requestedPropertyId != null &&
+              String(propertyId) === String(requestedPropertyId)
+            );
+          }) ||
+          requestedProperty ||
+          storedList[0];
 
         if (firstProperty) {
           setSelectedProperty(
@@ -598,7 +616,7 @@ const InventoryDetailScreen = ({
     };
 
     loadInitialProperty();
-  }, []);
+  }, [route?.params?.selectedProperty, route?.params?.selectedPropertyId]);
 
   /* =======================================================
      FIND INVENTORY ID
